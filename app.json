@@ -22,7 +22,8 @@
       },
       "predictiveBackGestureEnabled": false,
       "permissions": [
-        "android.permission.CAMERA"
+        "android.permission.health.READ_WEIGHT",
+        "android.permission.health.WRITE_WEIGHT"
       ]
     },
     "web": {
@@ -42,20 +43,18 @@
       ],
       "expo-sqlite",
       "@react-native-community/datetimepicker",
-      "expo-mlkit-ocr",
-      [
-        "expo-camera",
-        {
-          "cameraPermission": "Heft uses the camera to read the digits on your scale. Photos are processed on this device.",
-          "recordAudioAndroid": false
-        }
-      ],
+      "react-native-health-connect",
       [
         "expo-build-properties",
         {
           "ios": {
             "deploymentTarget": "16.4",
             "useFrameworks": "static"
+          },
+          "android": {
+            "minSdkVersion": 26,
+            "compileSdkVersion": 36,
+            "targetSdkVersion": 36
           }
         }
       ]

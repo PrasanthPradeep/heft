@@ -1,28 +1,21 @@
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import React, {
   createContext,
   useCallback,
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from 'react';
 
-import {
-  DEFAULT_SCALE_PROFILE_ID,
-  getScaleProfile,
-  SCALE_PROFILES,
-} from '../camera/profiles';
-import type { ScaleProfile } from '../camera/parser';
-
-const STORAGE_KEY = 'heft.scaleProfileId';
+import { loadPreferences, persistPreferences } from './preferenceStore';
+import { DEFAULT_PREFERENCES, type AppPreferences } from './types';
 
 type PreferencesContextValue = {
+  /** False until persisted preferences have been read. */
   ready: boolean;
-  profile: ScaleProfile;
-  profileId: string;
-  profiles: ScaleProfile[];
-  setProfileId: (id: string) => Promise<void>;
+  preferences: AppPreferences;
+  updatePreferences: (patch: Partial<AppPreferences>) => Promise<void>;
 };
 
 const PreferencesContext = createContext<PreferencesContextValue | null>(null);
@@ -32,20 +25,23 @@ export function PreferencesProvider({
 }: {
   children: React.ReactNode;
 }) {
-  const [profileId, setProfileIdState] = useState(DEFAULT_SCALE_PROFILE_ID);
+  const [preferences, setPreferences] =
+    useState<AppPreferences>(DEFAULT_PREFERENCES);
   const [ready, setReady] = useState(false);
+  // A ref mirrors the latest values so updates never read a stale closure.
+  const preferencesRef = useRef<AppPreferences>(DEFAULT_PREFERENCES);
 
   useEffect(() => {
     let active = true;
 
-    AsyncStorage.getItem(STORAGE_KEY)
-      .then((stored) => {
-        if (active && stored) {
-          setProfileIdState(stored);
-        }
+    loadPreferences()
+      .then((loaded) => {
+        if (!active) return;
+        preferencesRef.current = loaded;
+        setPreferences(loaded);
       })
       .catch(() => {
-        // Fall back to the default profile.
+        // Keep defaults; the app is still usable.
       })
       .finally(() => {
         if (active) setReady(true);
@@ -56,20 +52,19 @@ export function PreferencesProvider({
     };
   }, []);
 
-  const setProfileId = useCallback(async (id: string) => {
-    setProfileIdState(id);
-    await AsyncStorage.setItem(STORAGE_KEY, id);
-  }, []);
+  const updatePreferences = useCallback(
+    async (patch: Partial<AppPreferences>) => {
+      const next = { ...preferencesRef.current, ...patch };
+      preferencesRef.current = next;
+      setPreferences(next);
+      await persistPreferences(next);
+    },
+    []
+  );
 
   const value = useMemo<PreferencesContextValue>(
-    () => ({
-      ready,
-      profile: getScaleProfile(profileId),
-      profileId,
-      profiles: SCALE_PROFILES,
-      setProfileId,
-    }),
-    [ready, profileId, setProfileId]
+    () => ({ ready, preferences, updatePreferences }),
+    [ready, preferences, updatePreferences]
   );
 
   return (
