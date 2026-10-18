@@ -512,6 +512,7 @@ export default function SettingsScreen() {
           </Text>
           <Pressable
             accessibilityRole="link"
+            hitSlop={8}
             onPress={() =>
               Linking.openURL(REPOSITORY_URL).catch(() => undefined)
             }>
