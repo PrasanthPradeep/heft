@@ -185,22 +185,38 @@ npx eas-cli@latest build --platform android --profile preview
 ```
 
 The build page returns a URL/QR for the `.apk`; recipients allow *install unknown
-apps* and tap it. To build locally instead:
+apps* and tap it.
+
+The same build can run on your own machine, which skips the cloud queue and does
+not count against the free plan's build allowance:
+
+```bash
+EAS_LOCAL_BUILD_WORKINGDIR=~/eas-local-build \
+EAS_LOCAL_BUILD_ARTIFACTS_DIR=~/heft-builds \
+ANDROID_HOME=~/Android/Sdk ANDROID_SDK_ROOT=~/Android/Sdk \
+npx eas-cli@latest build --platform android --profile preview --local
+```
+
+Give the working directory room: a failed build leaves its Gradle tree behind, and
+building inside a small `tmpfs` dies partway through with
+`java.io.IOException: Disk quota exceeded`. Keeping the artifact directory beside
+it means the APK is easy to find afterwards (`~/heft-builds` here).
+
+There is a Gradle-only path as well, with two catches:
 
 ```bash
 npx expo prebuild --platform android
 cd android && ./gradlew assembleRelease   # app/build/outputs/apk/release/
 ```
 
-The generated `release` block signs with the **debug keystore**, so give it a
-real release keystore (and keep that file safe) before handing an APK to anyone.
-Android only installs an update over an existing app when the signature matches,
-so losing the key means every user has to uninstall and reinstall.
-
-A locally built APK also carries **no update channel**: it installs and runs
-perfectly, but it will never pick up an `eas update`. Only `eas build` injects
+It signs with the **debug keystore** unless you wire up the release keystore
+yourself, and it carries **no update channel**: it installs and runs perfectly, but
+it will never pick up an `eas update`, because only `eas build` injects
 `expo-channel-name` into the manifest. If you genuinely want a Gradle-only APK to
-update, add it yourself through `updates.requestHeaders` in `app.json`.
+update, add the channel yourself through `updates.requestHeaders` in `app.json`.
+Both catches are why a *release* should go through `eas build`, cloud or local.
+Android only installs an update over an existing app when the signature matches, so
+losing the release key means every user has to uninstall and reinstall.
 
 ### One CPU architecture (arm64)
 
@@ -243,6 +259,27 @@ build. `runtimeVersion` uses the `appVersion` policy, so **bump `expo.version`
 whenever the native side changes**: that makes existing installs ignore an
 incompatible update rather than load it and break. Development builds keep
 loading from the local Metro server and are unaffected.
+
+### Verifying an over-the-air update
+
+`fallbackToCacheTimeout` is `0`, so an update is fetched in the background and
+applied on the **next** launch. Launch, then launch again, and read Expo's own log:
+
+```bash
+adb logcat -c
+adb shell monkey -p com.heft.app -c android.intent.category.LAUNCHER 1   # fetch
+adb logcat -d -s dev.expo.updates:* | grep -E "Check|Download|Available"
+# CheckCompleteAvailable -> Download -> DownloadComplete
+
+adb shell am force-stop com.heft.app
+adb shell monkey -p com.heft.app -c android.intent.category.LAUNCHER 1   # apply
+adb logcat -d -s dev.expo.updates:* | grep NEW_UPDATE_LOADED
+```
+
+`EndStartup … isUpdatePending=true, downloadProgress=1.0` together with the
+`updateGroup` in `downloadedManifest` is the proof: that group ID is the one
+`eas update:list` shows for the branch. A release build is not debuggable, so
+`run-as` cannot open the update directory — the log is the only window into it.
 
 ### Shipping from `stable`
 
@@ -305,9 +342,54 @@ pushes made with the workflow token deliberately do *not* start other workflows.
 That is why the bump workflow ends by dispatching the other two explicitly rather
 than relying on its own tag push.
 
-Two resources to keep in mind: EAS allows 15 Android builds a month on the free
-plan, and a cloud build can wait in a low-priority queue for up to 45 minutes.
-Both workflows need the same `EXPO_TOKEN` secret.
+Two traps when a release run fails. **A re-run replays the workflow file as it was
+at that ref**, so a fix pushed afterwards is not picked up — dispatch a fresh run
+instead. And the notes template is looked for in the checked-out tag first, then on
+the default branch, because a tag can predate the file: `v1.0.0` does, and the
+first automated release failed with `sed: .github/release-notes.md: No such file`
+after the APK had already been built. Replacing the asset on an existing release —
+what the workflow does with `--clobber` when one already exists — also resets that
+asset's download counter to zero.
+
+Two resources to keep in mind. Free-plan builds are a limited monthly allowance of
+low-priority cloud jobs, so a release build can sit in the queue for 45 minutes;
+building locally with `--local` uses your own machine instead, which is the escape
+hatch Expo's billing FAQ points at once the allowance is spent. Both workflows need
+the same `EXPO_TOKEN` secret.
+
+### Verifying a release
+
+Four checks on any APK before it reaches someone. Each has caught something real.
+
+```bash
+APK=~/heft-builds/heft-1.0.0-arm64.apk
+BT=$(ls -d $ANDROID_HOME/build-tools/* | sort -V | tail -1)
+
+# what it claims to be, and which CPUs it carries
+"$BT/aapt" dump badging "$APK" | grep -E "^package|sdkVersion|native-code"
+# who signed it: must be the release keystore, or it will not install over the
+# copy people already have
+"$BT/apksigner" verify --print-certs "$APK" | grep "SHA-256 digest"
+# the hash that belongs in the release notes
+sha256sum "$APK"
+```
+
+The fourth is the one that actually proves a release: download the asset back from
+the release URL, check the hash against the notes, and install it over the phone's
+existing copy. `adb install -r` should say `Success` with no uninstall, and the app
+should come up on the same version with its data intact.
+
+```bash
+curl -fsL -o /tmp/published.apk \
+  https://github.com/PrasanthPradeep/heft/releases/download/v1.0.0/heft-1.0.0-arm64.apk
+sha256sum /tmp/published.apk
+adb install -r /tmp/published.apk
+```
+
+A cloud build and a local build of the same commit differ byte for byte, so compare
+a hash against the notes for *that* artifact, not the other build. What has to match
+across both is the package, the version name, the ABI list and the signing
+certificate.
 
 ### Brand assets
 
@@ -353,7 +435,12 @@ The last one splits users by the bundle they installed versus an update they
 downloaded, which is the honest answer to "is anyone running my latest build".
 "Unique users" means unique **installations** — an anonymous per-install ID, so a
 reinstall counts as new, an uninstall is lost, and a launch with no network is
-invisible.
+invisible. The channel totals are summed per update, so one phone that moved through
+six updates is counted six times: read them as a ceiling, not a head count.
+
+The GitHub counter is no better behaved. It lags behind the download, and swapping
+an asset on a release — which the release workflow does with `--clobber` — resets
+that asset's count to zero.
 
 That counting is free precisely because the installs already telephone Expo, which
 is worth being straight about in the app's own copy — see [Privacy](#privacy). The
@@ -417,10 +504,19 @@ development build:
 - Assistant: connect via ChatGPT (or paste an API key), pick a model, send a
   message; toggle **Share health data** and confirm **Preview shared data**
   matches what is sent.
+- Settings footer shows the version and a **GitHub** link that opens the
+  repository.
+- The **Data & privacy** card names the update check as the only network request
+  the app makes, rather than claiming nothing leaves the device.
 
 ## Project layout
 
 ```
+.github/
+  workflows/publish-update.yml      checks, then publishes on a push to stable
+  workflows/release.yml             builds the APK and opens the Release on a v* tag
+  workflows/bump.yml                one-button version release
+  release-notes.md                  install notes, hash filled in per release
 src/
   app/                              expo-router screens
     _layout.tsx                     providers, onboarding redirect, launch sync
