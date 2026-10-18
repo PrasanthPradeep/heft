@@ -22,6 +22,7 @@ import { streamChat, type ChatTurn } from '@/features/ai/aiClient';
 import { appendChatMessage, clearChatMessages, listChatMessages } from '@/features/ai/chatStore';
 import { buildHealthContext } from '@/features/ai/healthContext';
 import { buildInstructions } from '@/features/ai/prompts';
+import { MarkdownText } from '@/features/ai/MarkdownText';
 import { describeAiError, type ChatMessage } from '@/features/ai/types';
 import { usePreferences } from '@/features/settings/preferences';
 import type { WeightEntry } from '@/features/weight/types';
@@ -264,12 +265,11 @@ export default function AssistantScreen() {
                 styles.bubble,
                 item.role === 'user' ? styles.userBubble : styles.aiBubble,
               ]}>
-              <Text
-                style={
-                  item.role === 'user' ? styles.userText : styles.aiText
-                }>
-                {item.content}
-              </Text>
+              {item.role === 'user' ? (
+                <Text style={styles.userText}>{item.content}</Text>
+              ) : (
+                <MarkdownText source={item.content} style={styles.aiText} />
+              )}
             </View>
           )}
         />
