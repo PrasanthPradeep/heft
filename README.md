@@ -276,6 +276,15 @@ Merging into `stable` ships JavaScript only. A new **APK** is a separate,
 deliberate step, because it is what moves `expo.version` — and installs on an old
 version stop receiving over-the-air updates until they take the new APK.
 
+The easy way is the **Release a new version** workflow (Actions → *Release a new
+version* → *Run workflow*). Pick `patch`, `minor` or `major` and one run does all
+of it: the checks, raising `expo.version`, committing it to `main`, merging `main`
+into `stable`, tagging `vX.Y.Z`, then asking the APK build and the update publish
+to run. It refuses to start if the tag already exists, so a repeat run cannot
+half-release.
+
+By hand, it is the same three steps:
+
 ```bash
 # 1. raise expo.version in app.json and commit it to main
 # 2. merge main into stable, so the update for the new runtime gets published
@@ -289,7 +298,12 @@ build), runs the same checks as the publish workflow, builds a signed APK on EAS
 with the `preview` profile, and publishes a GitHub Release with the APK attached
 and the install notes filled in from `.github/release-notes.md`. If you would
 rather write the notes yourself, draft the release first and the workflow simply
-attaches the APK to it.
+attaches the APK to it — it only rewrites notes that came from the template.
+
+Worth knowing about the trigger: a tag pushed by hand starts the build, but
+pushes made with the workflow token deliberately do *not* start other workflows.
+That is why the bump workflow ends by dispatching the other two explicitly rather
+than relying on its own tag push.
 
 Two resources to keep in mind: EAS allows 15 Android builds a month on the free
 plan, and a cloud build can wait in a low-priority queue for up to 45 minutes.

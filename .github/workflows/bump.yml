@@ -1,0 +1,112 @@
+name: Release a new version
+
+# One button for a version release: raise expo.version, land it on main, merge
+# main into stable, tag the result, then ask the other two workflows to do their
+# jobs — build the APK, and publish the update for the new runtime version.
+#
+# The pushes here use the default workflow token, and by design that does not
+# start other workflows. That is why the last steps dispatch them explicitly
+# instead of relying on the push to trigger them.
+
+on:
+  workflow_dispatch:
+    inputs:
+      part:
+        description: 'Which part of the version to raise'
+        type: choice
+        options: [patch, minor, major]
+        default: patch
+
+concurrency:
+  group: release-a-new-version
+  cancel-in-progress: false
+
+jobs:
+  bump:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # commit to main and stable, create the tag
+      actions: write # dispatch the release and publish workflows
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      # Nothing is pushed unless the code is sound.
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Test
+        run: npm test -- --ci
+
+      - name: Raise expo.version
+        env:
+          PART: ${{ inputs.part }}
+        run: |
+          current=$(node -p "require('./app.json').expo.version")
+          next=$(node -e "
+            const [major, minor, patch] = '$current'.split('.').map(Number);
+            const part = process.env.PART;
+            const next =
+              part === 'major' ? [major + 1, 0, 0] :
+              part === 'minor' ? [major, minor + 1, 0] :
+              [major, minor, patch + 1];
+            process.stdout.write(next.join('.'));
+          ")
+          node -e "
+            const fs = require('fs');
+            const app = JSON.parse(fs.readFileSync('app.json', 'utf8'));
+            app.expo.version = '$next';
+            fs.writeFileSync('app.json', JSON.stringify(app, null, 2) + '\n');
+          "
+          echo "TAG=v$next" >> "$GITHUB_ENV"
+          echo "VERSION=$next" >> "$GITHUB_ENV"
+          echo "expo.version: $current -> $next"
+
+      # Checked before anything is pushed, so a repeat run cannot half-release.
+      - name: Refuse to reuse an existing tag
+        run: |
+          if git rev-parse -q --verify "refs/tags/$TAG" >/dev/null; then
+            echo "::error::Tag $TAG already exists. Nothing was pushed."
+            exit 1
+          fi
+
+      - name: Commit on main
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -am "chore: release $TAG"
+          git push origin main
+
+      - name: Merge main into stable
+        run: |
+          git checkout -B stable origin/stable
+          git merge --no-edit main
+          git push origin stable
+
+      - name: Tag the released commit
+        run: |
+          git tag "$TAG"
+          git push origin "$TAG"
+
+      - name: Build and publish the APK
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh workflow run release.yml -f tag="$TAG"
+
+      - name: Publish the update for the new runtime version
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh workflow run publish-update.yml
