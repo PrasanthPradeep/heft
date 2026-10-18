@@ -13,6 +13,12 @@ export const Colors = {
   warning: '#B54708',
   warningTint: '#FEF3E7',
   accent: '#6EE7AE',
+  /**
+   * Mint only reaches 3.37:1 on the brand green, which clears the 3:1 bar for
+   * large text but not the 4.5:1 one for the dashboard card's small strings.
+   * This is the mint for text on brand surfaces (4.71:1).
+   */
+  accentOnBrand: '#DCFCE7',
 } as const;
 
 export const Spacing = {

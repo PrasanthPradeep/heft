@@ -237,7 +237,7 @@ const styles = StyleSheet.create({
     gap: Spacing.one,
   },
   summaryLabel: {
-    color: Colors.accent,
+    color: Colors.accentOnBrand,
     fontWeight: '700',
     fontSize: 13,
     letterSpacing: 0.5,
@@ -248,13 +248,16 @@ const styles = StyleSheet.create({
     fontSize: 44,
     fontWeight: '800',
   },
+  // The 20px unit can keep the richer mint: bold text at >=18.66px is "large"
+  // under WCAG, where 3:1 is the bar and mint gives 3.37. Everything smaller on
+  // this card uses accentOnBrand, which clears the 4.5:1 bar for small text.
   summaryUnit: {
     fontSize: 20,
-    fontWeight: '600',
+    fontWeight: '700',
     color: Colors.accent,
   },
   summaryMeta: {
-    color: Colors.accent,
+    color: Colors.accentOnBrand,
     fontSize: 14,
   },
   summaryPressed: {
@@ -267,12 +270,12 @@ const styles = StyleSheet.create({
     marginTop: Spacing.two,
   },
   summaryHintText: {
-    color: Colors.accent,
+    color: Colors.accentOnBrand,
     fontWeight: '700',
     fontSize: 14,
   },
   summaryChevron: {
-    color: Colors.accent,
+    color: Colors.accentOnBrand,
     fontSize: 18,
     lineHeight: 18,
     fontWeight: '700',
