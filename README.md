@@ -197,6 +197,11 @@ real release keystore (and keep that file safe) before handing an APK to anyone.
 Android only installs an update over an existing app when the signature matches,
 so losing the key means every user has to uninstall and reinstall.
 
+A locally built APK also carries **no update channel**: it installs and runs
+perfectly, but it will never pick up an `eas update`. Only `eas build` injects
+`expo-channel-name` into the manifest. If you genuinely want a Gradle-only APK to
+update, add it yourself through `updates.requestHeaders` in `app.json`.
+
 ### Over-the-air updates
 
 `expo-updates` is configured (see `updates` / `runtimeVersion` in `app.json`), so
@@ -217,6 +222,22 @@ build. `runtimeVersion` uses the `appVersion` policy, so **bump `expo.version`
 whenever the native side changes**: that makes existing installs ignore an
 incompatible update rather than load it and break. Development builds keep
 loading from the local Metro server and are unaffected.
+
+### Brand assets
+
+The icons, splash mark and header wordmark are all generated from the logo
+masters in `assets/Heft Logo/` rather than hand-edited:
+
+```bash
+python3 scripts/generate-icons.py      # icon, adaptive layers, monochrome, favicon, splash
+python3 scripts/generate-wordmark.py   # header wordmark @1x/@2x/@3x
+```
+
+`generate-icons.py` needs Pillow; `generate-wordmark.py` needs Pillow and NumPy.
+Both are deterministic — re-running them reproduces the committed PNGs byte for
+byte. The header wordmark is cut as density variants so the device paints a
+bitmap that is already the size it needs, instead of shrinking one large image
+~5x at draw time.
 
 ## Data portability
 
