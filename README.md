@@ -1,16 +1,21 @@
 # Heft
 
-Heft is an offline-first body-weight tracker for Android. There is **no account,
-no server, and no AI service**. You enter each reading by hand, and you choose
-where it lives:
+Heft is an offline-first body-weight tracker for Android. The core app needs
+**no account, no server, and no subscription**. You enter each reading by hand,
+and you choose where it lives:
 
 - **Health Connect** — your weight history lives in the Android Health Connect
   app. Heft reads the accessible history, writes new readings back, and keeps
-  only settings plus a small, disposable cache on the device.
+  only settings plus a small, disposable cache on the device. Optional **activity
+  data** (steps and exercise sessions) can also be read from Health Connect —
+  this is how Google Fit / Fitbit / Samsung Health data reaches Heft, since
+  Google now surfaces those apps through Health Connect.
 - **Local storage only** — your complete history lives on this device in SQLite.
   No health permission is requested.
 
-The app works with **no network**. Everything below runs on-device.
+Every core feature works with **no network**. The only optional online feature is
+the built-in **Assistant**, which is **off by default** and never used unless you
+connect it yourself (see [Assistant](#assistant-optional-ai)).
 
 ## How it works
 
@@ -38,9 +43,13 @@ pending_weights
    — a manual form (weight, date/time, note). The same screen handles edits.
 4. **History** (`src/app/history.tsx`) — the full list with edit and delete.
 5. **Insights** (`src/app/insights.tsx`) — chart, 7-day average, weekly and
-   30-day change, plus goal weight and milestone progress.
-6. **Settings** (`src/app/settings.tsx`) — storage mode, units, remind time,
-   export / import, and delete-all.
+   30-day change, goal weight and milestone progress, plus (in Health Connect
+   mode) a weekly activity summary.
+6. **Assistant** (`src/app/assistant.tsx`) — an opt-in chat that can analyse your
+   data and help you plan. Off until you connect it; see below.
+7. **Settings** (`src/app/settings.tsx`) — storage mode, units, remind time,
+   activity permissions, the assistant connection, export / import, and
+   delete-all.
 
 ## Storage modes
 
@@ -81,11 +90,57 @@ requests only `READ_WEIGHT` / `WRITE_WEIGHT` and syncs a 30-day window; reading
 further back would require the `READ_HEALTH_DATA_HISTORY` permission and a Play
 Store declaration.
 
+**Activity (Google Fit and friends).** Activity is a **separate, optional**
+permission — onboarding stays weight-only. Tapping **Connect activity data** in
+Settings requests read access to `Steps` and `ExerciseSession`. Once granted,
+each sync stores per-day steps and recent sessions in `activity_daily` /
+`activity_sessions` and the Insights screen shows a weekly summary. Steps are
+read with Health Connect's daily aggregation (`aggregateGroupByPeriod`) rather
+than paging tens of thousands of minute-level records. Activity is **read-only**;
+Heft never writes it. Android has no live Google Fit API for new apps anymore
+(Google shut down sign-ups in 2024 and directs mobile apps to Health Connect),
+which is exactly why Heft reads Fitness data through Health Connect.
+
 ### Local-only mode
 
 SQLite is authoritative. Every reading is stored in `weight_entries`, there is
 no health permission, and nothing syncs. Export and import both work in this
 mode.
+
+## Assistant (optional AI)
+
+The assistant is a chat that can analyse your weight data and help you plan. It
+is **off by default** and entirely optional; if you never turn it on, the app
+never makes a network request.
+
+There are two ways to connect it, both in **Settings → Assistant**:
+
+1. **Continue with ChatGPT** — an in-app sign-in against your ChatGPT account
+   using OpenAI's `dynamic_agent_client` OAuth flow, adapted for mobile. This is
+   **experimental**: OpenAI requires a loopback redirect (`http://127.0.0.1:1455/
+   auth/callback`) that a phone has no server for, so Heft hosts the sign-in page
+   in a WebView and intercepts that navigation to read the authorization code.
+   Access tokens last ~1 hour and are refreshed silently (refresh tokens ~30
+   days). The ID-token signature is **not** cryptographically verified (React
+   Native has no WebCrypto RSA); `iss`, `aud` and `nonce` claims are still
+   checked. If the web view is blocked on your device, use option 2.
+2. **Use an OpenAI API key** — paste an `sk-…` key. It is stored in the device
+   keystore via `expo-secure-store` and billed to your OpenAI account.
+
+What leaves your device:
+
+- your chat messages, and
+- **only if you enable it**, a plain-text summary of your weight history and
+  trends (and activity, when available). The toggle is off by default and shows a
+  confirmation the first time; the exact text is previewed with **Preview shared
+  data** on the Assistant screen.
+
+Requests go directly to `https://api.openai.com/v1` (model list + the Responses
+API with `store: false`). Heft has no backend of its own. Chat history is stored
+locally in `ai_messages` and can be cleared with **New chat** or **Delete all**.
+
+The assistant is **not a medical professional** and cannot diagnose or treat
+anything; it says so, and so does the app.
 
 ## Requirements
 
@@ -163,6 +218,11 @@ development build:
 - Export then import in local mode; duplicate readings are skipped.
 - Kill and relaunch the app: local-mode readings persist; Health Connect mode
   re-syncs on launch.
+- Tap **Connect activity data**, grant steps/exercise: Insights shows a weekly
+  activity summary; denying leaves weight tracking unaffected.
+- Assistant: connect via ChatGPT (or paste an API key), pick a model, send a
+  message; toggle **Share health data** and confirm **Preview shared data**
+  matches what is sent.
 
 ## Project layout
 
@@ -174,8 +234,9 @@ src/
     index.tsx                       dashboard (latest, recent, sync, reminder)
     add-weight.tsx                  add / edit / delete a reading
     history.tsx                     full history list
-    insights.tsx                    chart, trends, goal + milestones
-    settings.tsx                    storage, units, reminders, export/import
+    insights.tsx                    chart, trends, goal + milestones, activity
+    assistant.tsx                   opt-in AI chat over your data
+    settings.tsx                    storage, units, reminders, AI, export/import
   components/ui.tsx                 shared Button/Card/Screen primitives
   constants/theme.ts                colors, spacing, radii
   db/
@@ -188,10 +249,30 @@ src/
       weightRepository.ts           Local + Health Connect repositories
       WeightEntryForm.tsx           manual entry form
     health-connect/
-      healthConnectPermissions.ts   availability + permission flow
+      healthConnectPermissions.ts   availability + weight/activity permissions
       healthConnectAdapter.ts       read / write / delete via Health Connect
       weightCache.ts                cache read + windowed replace
-      weightSync.ts                 two-way sync orchestration
+      weightSync.ts                 two-way sync + activity refresh
+    activity/
+      activityAdapter.ts            daily steps + exercise sessions via Health Connect
+      activityCache.ts              activity persistence + windowed replace
+      activityRepository.ts         activity loaders used by the UI
+      activityCalculations.ts       pure step/exercise math (unit-tested)
+      types.ts                      DailyActivity + ActivitySession + summary
+    ai/
+      types.ts                      AiMethod, AiModel, connection + errors
+      base64.ts                     dependency-free base64url / UTF-8
+      pkce.ts                       PKCE S256 helpers (expo-crypto)
+      chatgptAuth.ts                Sign in with ChatGPT OAuth (RN adaptation)
+      aiClient.ts                   model list + streaming Responses API
+      modelCatalog.ts               pure parsers for both model-list shapes
+      sse.ts                        pure Server-Sent Events parser
+      healthContext.ts              build the shared weight/activity summary
+      prompts.ts                    system instructions
+      chatStore.ts                  local transcript (ai_messages)
+      secureStore.ts                keystore for tokens / API key
+      AiSettingsCard.tsx            Settings UI for connecting the assistant
+      ChatGptSignInModal.tsx        WebView that intercepts the OAuth callback
     analytics/
       trendCalculations.ts          averages, changes, goals, reminders
       chartGeometry.ts              pure chart point math
@@ -206,24 +287,32 @@ src/
 
 ## Schema
 
-`PRAGMA user_version` drives migrations (see `src/db/migrations.ts`). Schema v1:
+`PRAGMA user_version` drives migrations (see `src/db/migrations.ts`). Schema v4:
 
-| Table             | Purpose                                              |
-| ----------------- | ---------------------------------------------------- |
-| `preferences`     | Key/value store; app preferences as one JSON blob    |
-| `weight_entries`  | Authoritative store for **local-only** mode          |
-| `weight_cache`    | Disposable 30-day mirror of Health Connect           |
-| `pending_weights` | Heft readings awaiting a Health Connect write        |
+| Table              | Purpose                                              |
+| ------------------ | ---------------------------------------------------- |
+| `preferences`      | Key/value store; app preferences as one JSON blob    |
+| `weight_entries`   | Authoritative store for **local-only** mode          |
+| `weight_cache`     | Disposable 30-day mirror of Health Connect           |
+| `pending_weights`  | Heft readings awaiting a Health Connect write        |
+| `activity_daily`   | Disposable per-day step counts from Health Connect   |
+| `activity_sessions`| Disposable recent exercise sessions from Health Connect |
+| `ai_messages`      | Local assistant transcript (cleared by delete-all)   |
 
 Settings and cache live locally in **both** modes; only `weight_entries` is
 mode-specific.
 
 ## Privacy
 
-- No account, no sign-in, no server, no analytics.
+- No account, no sign-in, no server, no analytics — unless you opt into the
+  assistant.
 - Local mode: data never leaves the device.
 - Health Connect mode: data is read from and written to Android Health Connect
-  under your control. Heft never touches records it did not create.
+  under your control. Heft never touches records it did not create. Activity is
+  read-only.
+- Assistant: off by default. When on, requests go straight to OpenAI with your
+  own credentials. Weight/trend data is only attached after you turn on **Share
+  health data with the AI**, which shows exactly what will be sent.
 - Reminders are **in-app only** — Heft does not request the notification
   permission.
 
@@ -235,5 +324,11 @@ mode-specific.
   by other apps for records it already cached beyond re-reading the window.
 - **Import is local-only** by design, to avoid duplicating Health Connect data.
 - **No native notifications.** The reminder is a banner shown inside the app.
+- **ChatGPT sign-in is experimental on mobile.** It relies on intercepting a
+  loopback redirect inside a WebView and skips ID-token signature verification.
+  It cannot be fully verified without a physical device; the API-key path is the
+  dependable fallback.
+- **Activity needs Health Connect mode.** Local-only mode never reads Health
+  Connect, preserving its "no health permission" promise.
 - A full end-to-end Android build has not been run in CI; validate
   `npx expo run:android` on a physical device before release.

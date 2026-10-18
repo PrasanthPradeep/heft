@@ -141,6 +141,9 @@ export default function HomeScreen() {
           <Text style={styles.link} onPress={() => router.push('/insights')}>
             Insights
           </Text>
+          <Text style={styles.link} onPress={() => router.push('/assistant')}>
+            Assistant
+          </Text>
           <Text style={styles.link} onPress={() => router.push('/settings')}>
             Settings
           </Text>

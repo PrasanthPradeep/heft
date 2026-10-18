@@ -20,6 +20,9 @@ import { Button, Card, Description, Label, Screen, Title } from '@/components/ui
 import { Colors, Radius, Spacing } from '@/constants/theme';
 import { clearAllData } from '@/db/database';
 import { formatDateTime } from '@/lib/format';
+import { AiSettingsCard } from '@/features/ai/AiSettingsCard';
+import { loadDailyActivity } from '@/features/activity/activityRepository';
+import { summarizeActivity } from '@/features/activity/activityCalculations';
 import {
   detectFormat,
   entriesToCsv,
@@ -28,9 +31,13 @@ import {
 } from '@/features/export/exportService';
 import { syncHealthConnect } from '@/features/health-connect/weightSync';
 import {
+  getActivityPermissionState,
   getHealthConnectStatus,
+  hasActivityAccess,
   openHealthConnectSettings,
+  requestActivityPermissions,
   requestWeightPermissions,
+  type ActivityPermissionState,
 } from '@/features/health-connect/healthConnectPermissions';
 import {
   loadLastSyncedAt,
@@ -52,14 +59,23 @@ export default function SettingsScreen() {
   const [busy, setBusy] = useState(false);
   const [importText, setImportText] = useState('');
   const [showTimePicker, setShowTimePicker] = useState(false);
+  const [activityAccess, setActivityAccess] = useState<ActivityPermissionState>({
+    canReadSteps: false,
+    canReadExercise: false,
+  });
+  const [activitySteps7d, setActivitySteps7d] = useState<number | null>(null);
 
   const load = useCallback(async () => {
-    const [rows, syncedAt] = await Promise.all([
+    const [rows, syncedAt, access, activityDays] = await Promise.all([
       repository.listWeights(),
       loadLastSyncedAt(),
+      getActivityPermissionState(),
+      loadDailyActivity(),
     ]);
     setEntries(rows);
     setLastSyncedAt(syncedAt);
+    setActivityAccess(access);
+    setActivitySteps7d(summarizeActivity(activityDays).averageSteps7d);
   }, [repository]);
 
   useFocusEffect(
@@ -137,11 +153,34 @@ export default function SettingsScreen() {
           `${result.written} uploaded, ${result.failed} still waiting.`
         );
       } else {
+        const activity =
+          result.activityDays > 0
+            ? `, ${result.activityDays} activity day${result.activityDays === 1 ? '' : 's'}`
+            : '';
         Alert.alert(
           'Synced',
-          `${result.written} uploaded, ${result.imported} read.`
+          `${result.written} uploaded, ${result.imported} read${activity}.`
         );
       }
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function connectActivity() {
+    setBusy(true);
+    try {
+      const access = await requestActivityPermissions();
+      setActivityAccess(access);
+      if (!hasActivityAccess(access)) {
+        Alert.alert(
+          'No activity data',
+          'Heft needs read access to steps and exercise to show Google Fit data. You can grant it in Health Connect.'
+        );
+        return;
+      }
+      await syncHealthConnect();
+      await load();
     } finally {
       setBusy(false);
     }
@@ -312,6 +351,32 @@ export default function SettingsScreen() {
                 disabled={busy}
               />
             </Card>
+
+            <Label>Activity</Label>
+            <Card style={styles.stack}>
+              <Text style={styles.cardText}>
+                {hasActivityAccess(activityAccess)
+                  ? activitySteps7d !== null
+                    ? `Averaging ${Math.round(activitySteps7d).toLocaleString()} steps a day over the last week.`
+                    : 'Reading steps and workouts from Health Connect.'
+                  : 'Read steps and workouts that Google Fit and other fitness apps sync to Health Connect.'}
+              </Text>
+              {hasActivityAccess(activityAccess) ? (
+                <Button
+                  label="Refresh activity"
+                  variant="secondary"
+                  onPress={runSync}
+                  disabled={busy}
+                />
+              ) : (
+                <Button
+                  label={busy ? 'Please wait…' : 'Connect activity data'}
+                  onPress={connectActivity}
+                  loading={busy}
+                  disabled={busy}
+                />
+              )}
+            </Card>
           </>
         ) : null}
 
@@ -371,6 +436,8 @@ export default function SettingsScreen() {
             onChange={onTimeChange}
           />
         ) : null}
+
+        <AiSettingsCard />
 
         <Label>Export</Label>
         <Card style={styles.stack}>

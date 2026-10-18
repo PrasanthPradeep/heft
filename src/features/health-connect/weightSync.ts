@@ -1,4 +1,7 @@
 import { getDatabase } from '@/db/database';
+import { readActivity } from '@/features/activity/activityAdapter';
+import { replaceActivitySnapshot } from '@/features/activity/activityCache';
+import { localDayKey, windowStartIso } from '@/features/activity/activityCalculations';
 import {
   loadLastSyncedAt,
   loadPreferences,
@@ -8,8 +11,10 @@ import type { PendingWeightRow } from '@/features/weight/types';
 
 import { readWeightHistory, writeWeight } from './healthConnectAdapter';
 import {
+  getActivityPermissionState,
   getHealthConnectStatus,
   getWeightPermissionState,
+  hasActivityAccess,
   initializeHealthConnect,
 } from './healthConnectPermissions';
 import { replaceCacheWindow, upsertCachedWeights } from './weightCache';
@@ -33,6 +38,8 @@ export type SyncResult = {
   failed: number;
   /** Records read back from Health Connect into the cache. */
   imported: number;
+  /** Days of activity (steps/exercise) refreshed into the cache. */
+  activityDays: number;
   syncedAt: string | null;
 };
 
@@ -41,7 +48,15 @@ function baseResult(
   reason: string | undefined,
   syncedAt: string | null
 ): SyncResult {
-  return { status, reason, written: 0, failed: 0, imported: 0, syncedAt };
+  return {
+    status,
+    reason,
+    written: 0,
+    failed: 0,
+    imported: 0,
+    activityDays: 0,
+    syncedAt,
+  };
 }
 
 /** Writes queued manual entries to Health Connect, stopping at the first failure. */
@@ -110,11 +125,35 @@ async function refreshCache(): Promise<number> {
 }
 
 /**
- * Synchronises Health Connect in both directions:
+ * Mirrors daily steps and exercise from Health Connect. The window starts at
+ * local midnight so Health Connect's daily buckets align to calendar days.
+ */
+async function refreshActivity(): Promise<number> {
+  const now = new Date();
+  const endTime = now.toISOString();
+  const startTime = windowStartIso(now, READ_WINDOW_DAYS);
+  const keepFromDay = localDayKey(new Date(startTime));
+
+  let snapshot;
+  try {
+    snapshot = await readActivity(startTime, endTime);
+  } catch {
+    // Permission revoked mid-flight or an unavailable provider: leave the cache.
+    return 0;
+  }
+
+  const db = await getDatabase();
+  await replaceActivitySnapshot(db, keepFromDay, startTime, snapshot);
+
+  return snapshot.days.length;
+}
+
+/**
+ * Synchronises Health Connect:
  *   1. skip entirely in local-only mode;
  *   2. verify availability and current permissions (they can be revoked);
  *   3. retry queued Heft writes;
- *   4. mirror the accessible history into the cache;
+ *   4. mirror the accessible weight history and activity into the cache;
  *   5. record the last successful sync time.
  */
 export async function syncHealthConnect(): Promise<SyncResult> {
@@ -133,7 +172,12 @@ export async function syncHealthConnect(): Promise<SyncResult> {
   await initializeHealthConnect();
 
   const permissions = await getWeightPermissionState();
-  if (!permissions.canRead && !permissions.canWrite) {
+  const activityPermissions = await getActivityPermissionState();
+  if (
+    !permissions.canRead &&
+    !permissions.canWrite &&
+    !hasActivityAccess(activityPermissions)
+  ) {
     return baseResult('skipped', 'no-permissions', lastSyncedAt);
   }
 
@@ -150,8 +194,13 @@ export async function syncHealthConnect(): Promise<SyncResult> {
     imported = await refreshCache();
   }
 
+  let activityDays = 0;
+  if (hasActivityAccess(activityPermissions)) {
+    activityDays = await refreshActivity();
+  }
+
   const syncedAt = new Date().toISOString();
   await persistLastSyncedAt(syncedAt);
 
-  return { status: 'ok', written, failed, imported, syncedAt };
+  return { status: 'ok', written, failed, imported, activityDays, syncedAt };
 }

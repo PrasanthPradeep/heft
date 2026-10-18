@@ -44,6 +44,16 @@ function normalizeInput(input: WeightEntryInput) {
 const LOCAL_EDIT_ERROR =
   'This measurement was not created in Heft, so it cannot be changed here.';
 
+/** Ignore malformed legacy/cache rows so they cannot break screens or charts. */
+function hasUsableWeight(entry: WeightEntry): boolean {
+  return (
+    typeof entry.weightKg === 'number' &&
+    Number.isFinite(entry.weightKg) &&
+    entry.weightKg >= 1 &&
+    entry.weightKg <= 500
+  );
+}
+
 /** Local-only mode: SQLite is the authoritative weight history. */
 export class LocalWeightRepository implements WeightRepository {
   async listWeights(): Promise<WeightEntry[]> {
@@ -51,7 +61,7 @@ export class LocalWeightRepository implements WeightRepository {
     const rows = await db.getAllAsync<WeightEntryRow>(
       'SELECT * FROM weight_entries ORDER BY measured_at DESC'
     );
-    return rows.map(rowToLocalEntry);
+    return rows.map(rowToLocalEntry).filter(hasUsableWeight);
   }
 
   async addWeight(input: WeightEntryInput): Promise<WeightEntry> {
@@ -143,7 +153,9 @@ export class HealthConnectWeightRepository implements WeightRepository {
     for (const entry of cached) byId.set(entry.id, entry);
     for (const row of pendingRows) byId.set(row.id, rowToPendingEntry(row));
 
-    return [...byId.values()].sort(compareByMeasuredAtDesc);
+    return [...byId.values()]
+      .filter(hasUsableWeight)
+      .sort(compareByMeasuredAtDesc);
   }
 
   async addWeight(input: WeightEntryInput): Promise<WeightEntry> {

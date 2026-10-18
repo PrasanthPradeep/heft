@@ -13,6 +13,12 @@ import { Button, Card, Label, Screen, Title } from '@/components/ui';
 import { Colors, Radius, Spacing } from '@/constants/theme';
 import { formatDateTime, formatSigned, formatWeight } from '@/lib/format';
 import { WeightChart } from '@/features/analytics/WeightChart';
+import { loadDailyActivity } from '@/features/activity/activityRepository';
+import {
+  summarizeActivity,
+  type ActivitySummary,
+} from '@/features/activity/activityCalculations';
+import type { DailyActivity } from '@/features/activity/types';
 import {
   computeGoalProgress,
   nextMilestone,
@@ -35,6 +41,10 @@ function changeInUnit(
   return unit === 'lb' ? kgToLb(value) : value;
 }
 
+function activitySummaryFor(days: DailyActivity[]): ActivitySummary {
+  return summarizeActivity(days);
+}
+
 export default function InsightsScreen() {
   const { preferences, updatePreferences } = usePreferences();
   const unit = preferences.weightUnit;
@@ -42,6 +52,9 @@ export default function InsightsScreen() {
 
   const [entries, setEntries] = useState<WeightEntry[]>([]);
   const [lastSyncedAt, setLastSyncedAt] = useState<string | null>(null);
+  const [activitySummary, setActivitySummary] = useState<ActivitySummary | null>(
+    null
+  );
   const [goalInput, setGoalInput] = useState(
     preferences.goalWeightKg
       ? formatWeight(preferences.goalWeightKg, unit)
@@ -49,12 +62,14 @@ export default function InsightsScreen() {
   );
 
   const load = useCallback(async () => {
-    const [rows, syncedAt] = await Promise.all([
+    const [rows, syncedAt, activityDays] = await Promise.all([
       repository.listWeights(),
       loadLastSyncedAt(),
+      loadDailyActivity(),
     ]);
     setEntries(rows);
     setLastSyncedAt(syncedAt);
+    setActivitySummary(activityDays.length > 0 ? activitySummaryFor(activityDays) : null);
   }, [repository]);
 
   useFocusEffect(
@@ -194,6 +209,13 @@ export default function InsightsScreen() {
             <Text style={styles.hint}>
               Heft reads the last 30 days of weight from Health Connect.
             </Text>
+            {activitySummary ? (
+              <Text style={styles.hint}>
+                Activity: {Math.round(activitySummary.averageSteps7d ?? 0).toLocaleString()}{' '}
+                steps/day average · {activitySummary.exerciseMinutes7d} exercise
+                minutes this week · active {activitySummary.activeDays7d}/7 days.
+              </Text>
+            ) : null}
           </Card>
         ) : null}
       </ScrollView>

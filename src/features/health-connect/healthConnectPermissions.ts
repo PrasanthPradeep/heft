@@ -15,6 +15,16 @@ export const WEIGHT_PERMISSIONS: Permission[] = [
   { accessType: 'write', recordType: 'Weight' },
 ];
 
+/**
+ * Read-only activity access. Google Fit (and other fitness apps) sync their data
+ * into Health Connect, so this is how Heft reads "Google Fit" steps and workouts
+ * without using the deprecated Google Fit APIs.
+ */
+export const ACTIVITY_PERMISSIONS: Permission[] = [
+  { accessType: 'read', recordType: 'Steps' },
+  { accessType: 'read', recordType: 'ExerciseSession' },
+];
+
 export type HealthConnectStatus =
   | 'available'
   | 'update-required'
@@ -99,6 +109,56 @@ export async function requestWeightPermissions(): Promise<WeightPermissionState>
   }
 
   return getWeightPermissionState();
+}
+
+export type ActivityPermissionState = {
+  canReadSteps: boolean;
+  canReadExercise: boolean;
+};
+
+export const NO_ACTIVITY_PERMISSIONS: ActivityPermissionState = {
+  canReadSteps: false,
+  canReadExercise: false,
+};
+
+export function hasActivityAccess(state: ActivityPermissionState): boolean {
+  return state.canReadSteps || state.canReadExercise;
+}
+
+/** Reads the currently granted activity permissions (steps + exercise). */
+export async function getActivityPermissionState(): Promise<ActivityPermissionState> {
+  if (Platform.OS !== 'android') return NO_ACTIVITY_PERMISSIONS;
+
+  try {
+    const granted = await getGrantedPermissions();
+    const canRead = (recordType: Permission['recordType']) =>
+      granted.some(
+        (permission) =>
+          permission.accessType === 'read' && permission.recordType === recordType
+      );
+    return {
+      canReadSteps: canRead('Steps'),
+      canReadExercise: canRead('ExerciseSession'),
+    };
+  } catch {
+    return NO_ACTIVITY_PERMISSIONS;
+  }
+}
+
+/**
+ * Requests read access to steps and exercise. Called only when the user opts in
+ * from Settings, so onboarding never asks for more than body weight.
+ */
+export async function requestActivityPermissions(): Promise<ActivityPermissionState> {
+  if (Platform.OS !== 'android') return NO_ACTIVITY_PERMISSIONS;
+
+  try {
+    await requestPermission(ACTIVITY_PERMISSIONS);
+  } catch {
+    // Fall through and report whatever was actually granted.
+  }
+
+  return getActivityPermissionState();
 }
 
 export { openHealthConnectSettings };

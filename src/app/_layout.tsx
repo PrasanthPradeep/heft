@@ -60,6 +60,7 @@ function AppNavigator() {
       <Stack.Screen name="add-weight" options={{ title: 'Add weight' }} />
       <Stack.Screen name="history" options={{ title: 'History' }} />
       <Stack.Screen name="insights" options={{ title: 'Insights' }} />
+      <Stack.Screen name="assistant" options={{ title: 'Assistant' }} />
       <Stack.Screen name="settings" options={{ title: 'Settings' }} />
     </Stack>
   );

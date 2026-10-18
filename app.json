@@ -23,7 +23,9 @@
       "predictiveBackGestureEnabled": false,
       "permissions": [
         "android.permission.health.READ_WEIGHT",
-        "android.permission.health.WRITE_WEIGHT"
+        "android.permission.health.WRITE_WEIGHT",
+        "android.permission.health.READ_STEPS",
+        "android.permission.health.READ_EXERCISE"
       ]
     },
     "web": {
@@ -57,7 +59,8 @@
             "targetSdkVersion": 36
           }
         }
-      ]
+      ],
+      "expo-secure-store"
     ],
     "experiments": {
       "typedRoutes": true,

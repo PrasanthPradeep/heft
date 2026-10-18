@@ -17,7 +17,14 @@ const MONTHS = [
 ];
 
 /** Formats kilograms in the user's unit without trailing-zero noise. */
-export function formatWeight(kg: number, unit: WeightUnit = 'kg'): string {
+export function formatWeight(
+  kg: number | null | undefined,
+  unit: WeightUnit = 'kg'
+): string {
+  // Old or malformed persisted rows should not crash the screen that displays them.
+  if (typeof kg !== 'number' || !Number.isFinite(kg)) {
+    return '--.--';
+  }
   const value = unit === 'lb' ? kgToLb(kg) : kg;
   // At most two decimals, then drop trailing zeros.
   return parseFloat(value.toFixed(2)).toString();
