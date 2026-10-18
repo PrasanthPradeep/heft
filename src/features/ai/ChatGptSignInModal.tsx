@@ -6,7 +6,7 @@ import {
   Text,
   View,
 } from 'react-native';
-import { WebView, type WebViewNavigation } from 'react-native-webview';
+import type { WebViewNavigation } from 'react-native-webview';
 
 import { Button } from '@/components/ui';
 import { Colors, Radius, Spacing } from '@/constants/theme';
@@ -26,19 +26,42 @@ import { describeAiError, type ChatGptConnection } from './types';
 const BROWSER_USER_AGENT =
   'Mozilla/5.0 (Linux; Android 14; Pixel 7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Mobile Safari/537.36';
 
+/**
+ * `react-native-webview` is a native module. It is loaded lazily so a binary
+ * without it shows a clear message instead of crashing Settings on import.
+ */
+type WebViewModule = typeof import('react-native-webview');
+
+let webViewCache: WebViewModule | null | undefined;
+
+function loadWebView(): WebViewModule | null {
+  if (webViewCache !== undefined) return webViewCache;
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    webViewCache = require('react-native-webview') as WebViewModule;
+  } catch {
+    webViewCache = null;
+  }
+  return webViewCache;
+}
+
 type Props = {
   onClose: () => void;
   onConnected: (connection: ChatGptConnection) => void;
 };
 
 export function ChatGptSignInModal({ onClose, onConnected }: Props) {
+  const webView = loadWebView();
   const [attempt, setAttempt] = useState<ChatGptSignInAttempt | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [preparing, setPreparing] = useState(true);
+  const [preparing, setPreparing] = useState(() => loadWebView() !== null);
   const [finishing, setFinishing] = useState(false);
   const [intercepted, setIntercepted] = useState(false);
 
   useEffect(() => {
+    // No point starting OAuth if the in-app browser is unavailable.
+    if (!loadWebView()) return;
+
     let cancelled = false;
 
     beginChatGptSignIn()
@@ -97,7 +120,19 @@ export function ChatGptSignInModal({ onClose, onConnected }: Props) {
           <Button label="Close" variant="secondary" onPress={onClose} />
         </View>
 
-        {error ? (
+        {!webView ? (
+          <View style={styles.center}>
+            <Text style={styles.error}>
+              Sign in with ChatGPT is unavailable in this build.
+            </Text>
+            <Text style={styles.hint}>
+              This build is missing the in-app browser module. Rebuild the app
+              (npx expo run:android), or use an OpenAI API key instead from
+              Settings.
+            </Text>
+            <Button label="Close" variant="secondary" onPress={onClose} />
+          </View>
+        ) : error ? (
           <View style={styles.center}>
             <Text style={styles.error}>{error}</Text>
             <Text style={styles.hint}>
@@ -113,7 +148,7 @@ export function ChatGptSignInModal({ onClose, onConnected }: Props) {
           </View>
         ) : (
           <View style={styles.webviewWrap}>
-            <WebView
+            <webView.WebView
               source={{ uri: attempt.authorizationUrl }}
               userAgent={BROWSER_USER_AGENT}
               originWhitelist={['*']}

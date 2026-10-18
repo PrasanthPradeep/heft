@@ -1,35 +1,67 @@
-import * as SecureStore from 'expo-secure-store';
-
 import { coerceChatGptConnection, type ChatGptConnection } from './types';
+
+/**
+ * `expo-secure-store` is a native module. It is loaded lazily (and tolerantly)
+ * so that a binary which predates the dependency — or the web target — degrades
+ * to "secure storage unavailable" instead of throwing while the module graph is
+ * being evaluated. A top-level `import` here would otherwise crash every screen
+ * that imports the assistant, including Settings.
+ */
+type SecureStoreApi = typeof import('expo-secure-store');
 
 const CONNECTION_KEY = 'heft.ai.chatgpt.connection';
 const API_KEY_KEY = 'heft.ai.openai.apiKey';
 const HOST_ID_KEY = 'heft.ai.chatgpt.hostId';
 
-async function readItem(key: string): Promise<string | null> {
+let resolved: SecureStoreApi | null | undefined;
+
+function secureStore(): SecureStoreApi | null {
+  if (resolved !== undefined) return resolved;
   try {
-    return await SecureStore.getItemAsync(key);
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    resolved = require('expo-secure-store') as SecureStoreApi;
+  } catch {
+    resolved = null;
+  }
+  return resolved;
+}
+
+async function readItem(key: string): Promise<string | null> {
+  const store = secureStore();
+  if (!store) return null;
+  try {
+    return await store.getItemAsync(key);
   } catch {
     return null;
   }
 }
 
 async function writeItem(key: string, value: string): Promise<void> {
-  await SecureStore.setItemAsync(key, value);
+  const store = secureStore();
+  if (!store) {
+    throw new Error(
+      'Secure storage is not available in this build of Heft. Rebuild the app.'
+    );
+  }
+  await store.setItemAsync(key, value);
 }
 
 async function removeItem(key: string): Promise<void> {
+  const store = secureStore();
+  if (!store) return;
   try {
-    await SecureStore.deleteItemAsync(key);
+    await store.deleteItemAsync(key);
   } catch {
     // Nothing stored, or the keystore is unavailable on this platform.
   }
 }
 
-/** SecureStore is unavailable on web; the assistant is Android/iOS only. */
+/** False when the native keystore module is missing (e.g. an old dev build). */
 export async function isSecureStorageAvailable(): Promise<boolean> {
+  const store = secureStore();
+  if (!store) return false;
   try {
-    return await SecureStore.isAvailableAsync();
+    return await store.isAvailableAsync();
   } catch {
     return false;
   }
