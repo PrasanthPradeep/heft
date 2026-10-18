@@ -325,6 +325,45 @@ byte. The header wordmark is cut as density variants so the device paints a
 bitmap that is already the size it needs, instead of shrinking one large image
 ~5x at draw time.
 
+## Knowing whether anyone uses it
+
+Two counters, neither needing a server of your own.
+
+**Downloads** come from GitHub, which counts every fetch of the release file:
+
+```bash
+gh release view v1.0.0 --json assets -q '.assets[] | "\(.name): \(.downloadCount)"'
+```
+
+A re-download counts again, so read it as an upper bound on installs rather than a
+head count. Repository traffic (`gh api repos/PrasanthPradeep/heft/traffic/views`)
+is a rough interest signal, not usage.
+
+**Use** comes from EAS Update, because the app already asks it for a newer version
+on every cold start (`checkAutomatically: ON_LOAD`). That is enough for Expo to
+count launches without a line of instrumentation:
+
+```bash
+npx eas-cli@latest update:list --branch preview       # group IDs
+npx eas-cli@latest update:insights <group-id>         # launches, unique users, crash rate
+npx eas-cli@latest channel:insights --channel preview --runtime-version 1.0.0
+```
+
+The last one splits users by the bundle they installed versus an update they
+downloaded, which is the honest answer to "is anyone running my latest build".
+"Unique users" means unique **installations** — an anonymous per-install ID, so a
+reinstall counts as new, an uninstall is lost, and a launch with no network is
+invisible.
+
+That counting is free precisely because the installs already telephone Expo, which
+is worth being straight about in the app's own copy — see [Privacy](#privacy). The
+trade is a launch request carrying an anonymous ID and no measurements, in return
+for over-the-air updates and these numbers. Removing `expo-updates` removes both.
+
+For more than counts — sessions, which screens get opened, retention, JavaScript
+errors — add `expo-insights` (free while in preview) or EAS Observe (100k events a
+month on the free plan), or PostHog if the data should live somewhere you control.
+
 ## Data portability
 
 - **Export** — Settings shares the full history as **CSV** or **JSON** text
@@ -459,9 +498,14 @@ mode-specific.
 
 ## Privacy
 
-- No account, no sign-in, no server, no analytics — unless you opt into the
-  assistant.
-- Local mode: data never leaves the device.
+- No account, no sign-in, no analytics, and no server of ours — unless you opt
+  into the assistant.
+- Over-the-air updates mean the app does ask Expo's update service, on launch,
+  whether a newer version exists. That request carries an anonymous per-install ID
+  and no measurements, and it is what the counts in
+  [Knowing whether anyone uses it](#knowing-whether-anyone-uses-it) are built
+  from. Removing `expo-updates` removes the request.
+- Local mode: measurements never leave the device.
 - Health Connect mode: data is read from and written to Android Health Connect
   under your control. Heft never touches records it did not create. Activity is
   read-only.

@@ -495,9 +495,11 @@ export default function SettingsScreen() {
         <Label>Data & privacy</Label>
         <Card style={styles.stack}>
           <Text style={styles.cardText}>
-            Heft has no account and no server. In local mode nothing leaves this
-            device. In Health Connect mode, data is read from and written to the
-            Android Health Connect app under your control.
+            Heft has no account and no server of ours. In local mode your
+            measurements stay on this device; in Health Connect mode they are read
+            from and written to the Android Health Connect app under your control.
+            The only network request Heft makes is the update check, which carries
+            nothing you entered.
           </Text>
           <Button
             label="Delete all measurements"
