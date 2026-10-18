@@ -510,15 +510,14 @@ export default function SettingsScreen() {
           <Text style={styles.footerText}>
             {appVersion ? `Heft ${appVersion}` : 'Heft'}
           </Text>
+          <Text style={styles.footerText}>·</Text>
           <Pressable
             accessibilityRole="link"
             hitSlop={8}
             onPress={() =>
               Linking.openURL(REPOSITORY_URL).catch(() => undefined)
             }>
-            <Text style={styles.footerLink}>
-              github.com/PrasanthPradeep/heft
-            </Text>
+            <Text style={styles.footerLink}>GitHub</Text>
           </Pressable>
         </View>
       </ScrollView>
@@ -576,7 +575,9 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.surface,
   },
   footer: {
+    flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'center',
     gap: Spacing.one,
     marginTop: Spacing.four,
   },
