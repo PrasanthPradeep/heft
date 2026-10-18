@@ -108,7 +108,7 @@ export function IconButton({
 }
 
 /** Width ÷ height of the Heft lockup; the asset is cropped tight to the ink. */
-const WORDMARK_ASPECT = 625 / 240;
+const WORDMARK_ASPECT = 1698 / 652;
 
 /**
  * The Heft lockup (gauge mark plus wordmark) shown as the dashboard title.
@@ -117,8 +117,12 @@ const WORDMARK_ASPECT = 625 / 240;
  * transparency against its own palette. The white inside the mark — the ring
  * and the "h" — is genuinely opaque rather than punched out, so the lockup
  * still reads if it ever lands on a dark surface.
+ *
+ * `wordmark.png` ships @1x/@2x/@3x, so the platform picks a bitmap already at
+ * the size it paints. A single tall bitmap resampled at draw time is what made
+ * the ring and the letterforms go soft.
  */
-export function Wordmark({ height = 26 }: { height?: number }) {
+export function Wordmark({ height = 32 }: { height?: number }) {
   return (
     <Image
       source={require('../../assets/images/wordmark.png')}
