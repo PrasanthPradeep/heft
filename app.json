@@ -2,7 +2,7 @@
   "expo": {
     "name": "Heft",
     "slug": "heft",
-    "version": "1.0.0",
+    "version": "1.0.1",
     "runtimeVersion": {
       "policy": "appVersion"
     },
@@ -68,7 +68,10 @@
             "minSdkVersion": 26,
             "compileSdkVersion": 36,
             "targetSdkVersion": 36,
-            "buildArchs": ["arm64-v8a", "armeabi-v7a"]
+            "buildArchs": [
+              "arm64-v8a",
+              "armeabi-v7a"
+            ]
           }
         }
       ],
