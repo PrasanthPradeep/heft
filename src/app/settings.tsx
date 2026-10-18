@@ -1,10 +1,12 @@
 import DateTimePicker, {
   type DateTimePickerEvent,
 } from '@react-native-community/datetimepicker';
+import Constants from 'expo-constants';
 import { useFocusEffect } from 'expo-router';
 import React, { useCallback, useState } from 'react';
 import {
   Alert,
+  Linking,
   Platform,
   Pressable,
   ScrollView,
@@ -49,10 +51,13 @@ import { getWeightRepository } from '@/features/weight/weightRepository';
 
 const UNITS: WeightUnit[] = ['kg', 'lb'];
 
+const REPOSITORY_URL = 'https://github.com/PrasanthPradeep/heft';
+
 export default function SettingsScreen() {
   const { preferences, updatePreferences } = usePreferences();
   const repository = getWeightRepository(preferences.storageMode);
   const isHealthConnect = preferences.storageMode === 'health-connect';
+  const appVersion = Constants.expoConfig?.version;
 
   const [entries, setEntries] = useState<WeightEntry[]>([]);
   const [lastSyncedAt, setLastSyncedAt] = useState<string | null>(null);
@@ -500,6 +505,21 @@ export default function SettingsScreen() {
             onPress={confirmClear}
           />
         </Card>
+
+        <View style={styles.footer}>
+          <Text style={styles.footerText}>
+            {appVersion ? `Heft ${appVersion}` : 'Heft'}
+          </Text>
+          <Pressable
+            accessibilityRole="link"
+            onPress={() =>
+              Linking.openURL(REPOSITORY_URL).catch(() => undefined)
+            }>
+            <Text style={styles.footerLink}>
+              github.com/PrasanthPradeep/heft
+            </Text>
+          </Pressable>
+        </View>
       </ScrollView>
     </Screen>
   );
@@ -553,5 +573,17 @@ const styles = StyleSheet.create({
     padding: Spacing.three,
     textAlignVertical: 'top',
     backgroundColor: Colors.surface,
+  },
+  footer: {
+    alignItems: 'center',
+    gap: Spacing.one,
+    marginTop: Spacing.four,
+  },
+  footerText: { color: Colors.textSecondary, fontSize: 13 },
+  footerLink: {
+    color: Colors.brand,
+    fontSize: 13,
+    fontWeight: '600',
+    paddingVertical: Spacing.one,
   },
 });
