@@ -202,6 +202,27 @@ perfectly, but it will never pick up an `eas update`. Only `eas build` injects
 `expo-channel-name` into the manifest. If you genuinely want a Gradle-only APK to
 update, add it yourself through `updates.requestHeaders` in `app.json`.
 
+### One CPU architecture (arm64)
+
+`expo-build-properties` pins `android.buildArchs` to `arm64-v8a` in `app.json`,
+so the APK carries native libraries for a single CPU family instead of four.
+That takes a preview APK from **105 MB to 46 MB** with no loss for anyone: every
+phone made since roughly 2016 is arm64, including every current mainstream
+device.
+
+The trade-off is deliberate. The APK will *not* install on a 32-bit-only phone
+(`armeabi-v7a`) or on an Android emulator running on Intel/AMD hardware
+(`x86_64`). For a universal build, restore all four architectures in `buildArchs`
+and rebuild.
+
+This is packaging only. Installed apps keep working and keep receiving
+over-the-air updates either way, and `runtimeVersion` stays `1.0.0`.
+
+`expo-dev-client` is in `dependencies`, so its launcher is compiled into release
+builds too, at about 4 MB of dead weight. It is only needed by the `development`
+profile, and it can be excluded on release via a platform-specific Gradle task —
+worth doing only if the APK needs to get smaller still.
+
 ### Over-the-air updates
 
 `expo-updates` is configured (see `updates` / `runtimeVersion` in `app.json`), so
