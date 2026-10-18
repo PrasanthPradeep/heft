@@ -39,6 +39,10 @@ yarn-error.*
 # typescript
 *.tsbuildinfo
 
+# python (brand-asset generators in scripts/)
+__pycache__/
+*.pyc
+
 # editors / IDE
 .idea/
 
