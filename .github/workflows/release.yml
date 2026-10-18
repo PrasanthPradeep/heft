@@ -114,11 +114,31 @@ jobs:
 
       - name: Download the APK and hash it
         run: |
-          name="heft-${VERSION}-arm64.apk"
+          # No architecture in the name: this one APK carries both arm64 and
+          # arm32, so a suffix would either be wrong or need editing every time
+          # buildArchs changes.
+          name="heft-${VERSION}.apk"
           curl -fL --retry 3 --retry-delay 5 -o "$name" "$(cat artifact-url.txt)"
           sha256sum "$name" > apk.sha256
           cat apk.sha256
           echo "APK_NAME=$name" >> "$GITHUB_ENV"
+
+      # Native libraries are the one part of an APK that the JavaScript never
+      # touches, so a wrong `buildArchs` produces a file that passes every other
+      # check and then refuses to install on a whole class of phones. Catch it
+      # here, before it is published, instead of hearing about it from whoever
+      # downloads first.
+      - name: Check the APK carries both architectures
+        run: |
+          entries=$(unzip -l "$APK_NAME")
+          for abi in arm64-v8a armeabi-v7a; do
+            if printf '%s' "$entries" | grep -q "lib/$abi/"; then
+              echo "found lib/$abi/"
+            else
+              echo "::error::$APK_NAME has no $abi native libraries. Check android.buildArchs in app.json, then release again."
+              exit 1
+            fi
+          done
 
       # Keeps the friend-facing install instructions in every release without
       # retyping them, with that release's own hash filled in.

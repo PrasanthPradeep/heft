@@ -10,7 +10,7 @@ Offline-first weight tracking for Android. No account, no server, no subscriptio
 
 ## Requirements
 
-- Android 8.0 or newer, on an **arm64** phone — everything from roughly 2016 onwards. It will *not* install on a 32-bit-only phone or on an x86 emulator, since the APK ships only the arm64 native libraries.
+- Android 8.0 or newer, on a real phone. The APK carries native libraries for both 64-bit and 32-bit devices, which between them cover every Android phone. It will *not* install on an Android emulator running on Intel or AMD hardware.
 - Health Connect is built into Android 14+. On Android 8–13, install the [Health Connect app](https://play.google.com/store/apps/details?id=com.google.android.apps.healthdata) first.
 - Local-only mode needs nothing at all.
 
