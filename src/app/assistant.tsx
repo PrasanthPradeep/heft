@@ -1,7 +1,9 @@
 import { router, useFocusEffect } from 'expo-router';
-import React, { useCallback, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
+  Dimensions,
   FlatList,
+  Keyboard,
   KeyboardAvoidingView,
   Platform,
   StyleSheet,
@@ -9,6 +11,7 @@ import {
   TextInput,
   View,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Button, Card, Screen, Title } from '@/components/ui';
 import { Colors, Radius, Spacing } from '@/constants/theme';
@@ -36,9 +39,45 @@ export default function AssistantScreen() {
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showPreview, setShowPreview] = useState(false);
+  const [keyboardHeight, setKeyboardHeight] = useState(0);
 
+  const insets = useSafeAreaInsets();
   const listRef = useRef<FlatList<ChatMessage>>(null);
   const controllerRef = useRef<AbortController | null>(null);
+
+  /**
+   * Android runs edge-to-edge, so the system ignores `adjustResize` and never
+   * shrinks the window for the keyboard. `KeyboardAvoidingView` is a no-op
+   * there, so the bottom-anchored composer is lifted manually by the reported
+   * IME height. iOS still uses `KeyboardAvoidingView`.
+   */
+  useEffect(() => {
+    if (Platform.OS !== 'android') return;
+
+    const clamp = (height: number) =>
+      Number.isFinite(height) && height > 0
+        ? Math.min(height, Dimensions.get('window').height * 0.6)
+        : 0;
+
+    const shown = Keyboard.addListener('keyboardDidShow', (event) => {
+      setKeyboardHeight(clamp(event.endCoordinates.height));
+    });
+    const hidden = Keyboard.addListener('keyboardDidHide', () => {
+      setKeyboardHeight(0);
+    });
+
+    return () => {
+      shown.remove();
+      hidden.remove();
+    };
+  }, []);
+
+  // Keep the newest message visible when the keyboard resizes the list.
+  useEffect(() => {
+    if (keyboardHeight > 0) {
+      listRef.current?.scrollToEnd({ animated: true });
+    }
+  }, [keyboardHeight]);
 
   const load = useCallback(async () => {
     const [history, rows, activityDays] = await Promise.all([
@@ -162,6 +201,11 @@ export default function AssistantScreen() {
     : null;
   const data = streamingMessage ? [...messages, streamingMessage] : messages;
 
+  // Lift the composer above the keyboard (Android) or the gesture bar.
+  const composerPadding = Platform.OS === 'android'
+    ? Spacing.three + Math.max(keyboardHeight, insets.bottom)
+    : Spacing.three;
+
   return (
     <Screen edges={['left', 'right']}>
       <KeyboardAvoidingView
@@ -232,7 +276,7 @@ export default function AssistantScreen() {
 
         {error ? <Text style={styles.error}>{error}</Text> : null}
 
-        <View style={styles.composer}>
+        <View style={[styles.composer, { paddingBottom: composerPadding }]}>
           <TextInput
             value={input}
             onChangeText={setInput}
