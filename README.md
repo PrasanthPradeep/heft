@@ -270,6 +270,31 @@ channel, because that is what the installed APK subscribes to — a channel is
 baked into a build, so renaming it would mean rebuilding and reinstalling the
 APK. To publish out of band, run the `eas update` command above by hand.
 
+### Cutting a version release
+
+Merging into `stable` ships JavaScript only. A new **APK** is a separate,
+deliberate step, because it is what moves `expo.version` — and installs on an old
+version stop receiving over-the-air updates until they take the new APK.
+
+```bash
+# 1. raise expo.version in app.json and commit it to main
+# 2. merge main into stable, so the update for the new runtime gets published
+# 3. tag that same commit — the tag builds the APK and opens the release
+git tag v1.1.0 && git push origin v1.1.0
+```
+
+`.github/workflows/release.yml` takes it from there. It checks that the tag
+matches `expo.version` (a mismatch fails rather than shipping a mislabelled
+build), runs the same checks as the publish workflow, builds a signed APK on EAS
+with the `preview` profile, and publishes a GitHub Release with the APK attached
+and the install notes filled in from `.github/release-notes.md`. If you would
+rather write the notes yourself, draft the release first and the workflow simply
+attaches the APK to it.
+
+Two resources to keep in mind: EAS allows 15 Android builds a month on the free
+plan, and a cloud build can wait in a low-priority queue for up to 45 minutes.
+Both workflows need the same `EXPO_TOKEN` secret.
+
 ### Brand assets
 
 The icons, splash mark and header wordmark are all generated from the logo

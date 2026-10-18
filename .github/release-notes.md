@@ -1,0 +1,27 @@
+Offline-first weight tracking for Android. No account, no server, no subscription.
+
+## Install
+
+1. Download the `.apk` below.
+2. Tap it, and allow *install unknown apps* if Android asks.
+3. On first run, choose how Heft stores your data:
+   - **Health Connect** — read your existing weight history and write new readings back.
+   - **Local only** — everything stays in the app's own database. No permissions requested.
+
+## Requirements
+
+- Android 8.0 or newer, on an **arm64** phone — everything from roughly 2016 onwards. It will *not* install on a 32-bit-only phone or on an x86 emulator, since the APK ships only the arm64 native libraries.
+- Health Connect is built into Android 14+. On Android 8–13, install the [Health Connect app](https://play.google.com/store/apps/details?id=com.google.android.apps.healthdata) first.
+- Local-only mode needs nothing at all.
+
+## Updates
+
+This build receives fixes automatically: JavaScript and assets arrive over the air, so there is no need to reinstall to get them.
+
+## Verifying the download
+
+```
+APK SHA-256    {SHA256}
+```
+
+Package `com.heft.app`, version {VERSION}.

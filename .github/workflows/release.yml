@@ -1,0 +1,122 @@
+name: Release APK
+
+# Pushing a version tag is the release action: it builds a fresh signed APK on
+# EAS and publishes it as a GitHub Release.
+#
+# The order that keeps everything consistent:
+#   1. bump `expo.version` in app.json and commit it on main
+#   2. merge main into stable   (this publishes the over-the-air update for the
+#                                new runtime version)
+#   3. tag that commit          (this builds and publishes the APK)
+#
+# The build uses the `preview` profile because that is the APK people already
+# have installed: same signing key (so it installs straight over the old one)
+# and same update channel (so it keeps receiving over-the-air updates).
+#
+# The checks below run before the build on purpose. EAS builds are limited on the
+# free plan, and a bundle that fails typechecking is a wasted one.
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # create the GitHub Release
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      # A release must not claim a version it is not. Fails loudly on a mismatch.
+      - name: Check the tag matches expo.version
+        run: |
+          version=$(node -p "require('./app.json').expo.version")
+          if [ "${GITHUB_REF_NAME}" != "v${version}" ]; then
+            echo "::error::Tag ${GITHUB_REF_NAME} does not match expo.version ${version}. Bump expo.version in app.json, then retag."
+            exit 1
+          fi
+          echo "Releasing ${GITHUB_REF_NAME} (${GITHUB_SHA})"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Test
+        run: npm test -- --ci
+
+      - name: Check that the build token is configured
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+        run: |
+          if [ -z "$EXPO_TOKEN" ]; then
+            echo "::error::EXPO_TOKEN is not set. Create an access token at https://expo.dev/settings/access-tokens, then run: gh secret set EXPO_TOKEN"
+            exit 1
+          fi
+
+      - name: Build the APK on EAS
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+        run: |
+          npx eas-cli@latest build \
+            --platform android \
+            --profile preview \
+            --non-interactive \
+            --wait \
+            --json > build.json
+          node -e "
+            const [build] = JSON.parse(require('fs').readFileSync('build.json', 'utf8'));
+            const url = build.artifacts?.applicationArchiveUrl;
+            if (!url) { console.error('No artifact in build result:', build); process.exit(1); }
+            console.log('Build', build.id, build.status);
+            require('fs').writeFileSync('artifact-url.txt', url);
+          "
+          cat artifact-url.txt
+
+      - name: Download the APK and hash it
+        run: |
+          name="heft-${GITHUB_REF_NAME#v}-arm64.apk"
+          curl -fL --retry 3 --retry-delay 5 -o "$name" "$(cat artifact-url.txt)"
+          sha256sum "$name" > apk.sha256
+          cat apk.sha256
+          echo "APK_NAME=$name" >> "$GITHUB_ENV"
+
+      # Keeps the friend-facing install instructions in every release without
+      # retyping them, with that release's own hash filled in.
+      - name: Build the release notes
+        run: |
+          sha=$(cut -d' ' -f1 apk.sha256)
+          sed "s/{VERSION}/${GITHUB_REF_NAME#v}/g; s/{SHA256}/${sha}/g" \
+            .github/release-notes.md > notes.md
+          head -5 notes.md
+
+      - name: Publish the GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            # A release (or draft) was written by hand: just attach the APK.
+            gh release upload "$GITHUB_REF_NAME" "$APK_NAME" --clobber
+          else
+            gh release create "$GITHUB_REF_NAME" "$APK_NAME" \
+              --title "Heft ${GITHUB_REF_NAME#v}" \
+              --notes-file notes.md \
+              --generate-notes
+          fi
