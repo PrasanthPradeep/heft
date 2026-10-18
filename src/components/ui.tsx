@@ -1,6 +1,7 @@
 import React from 'react';
 import {
   ActivityIndicator,
+  Image,
   Pressable,
   StyleSheet,
   Text,
@@ -103,6 +104,30 @@ export function IconButton({
       ]}>
       {children}
     </Pressable>
+  );
+}
+
+/** Width ÷ height of the Heft lockup; the asset is cropped tight to the ink. */
+const WORDMARK_ASPECT = 625 / 240;
+
+/**
+ * The Heft lockup (gauge mark plus wordmark) shown as the dashboard title.
+ *
+ * The source artwork is flat colour on opaque white, so it was keyed to
+ * transparency against its own palette. The white inside the mark — the ring
+ * and the "h" — is genuinely opaque rather than punched out, so the lockup
+ * still reads if it ever lands on a dark surface.
+ */
+export function Wordmark({ height = 26 }: { height?: number }) {
+  return (
+    <Image
+      source={require('../../assets/images/wordmark.png')}
+      style={{ width: Math.round(height * WORDMARK_ASPECT), height }}
+      resizeMode="contain"
+      accessible
+      accessibilityRole="image"
+      accessibilityLabel="Heft"
+    />
   );
 }
 

@@ -2,7 +2,7 @@ import { Stack, router, useSegments } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import React, { useEffect, useRef } from 'react';
 
-import { GearIcon, IconButton } from '@/components/ui';
+import { GearIcon, IconButton, Wordmark } from '@/components/ui';
 import { Colors } from '@/constants/theme';
 import { syncHealthConnect } from '@/features/health-connect/weightSync';
 import {
@@ -60,7 +60,10 @@ function AppNavigator() {
       <Stack.Screen
         name="index"
         options={{
+          // `title` still drives the back-button label on deeper screens.
           title: 'Heft',
+          headerTitleAlign: 'left',
+          headerTitle: () => <Wordmark />,
           headerRight: () => (
             <IconButton
               accessibilityLabel="Settings"
