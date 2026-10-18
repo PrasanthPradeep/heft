@@ -79,6 +79,93 @@ export function Card({
   return <View style={[styles.card, style]}>{children}</View>;
 }
 
+export function IconButton({
+  onPress,
+  accessibilityLabel,
+  children,
+  testID,
+}: {
+  onPress: () => void;
+  accessibilityLabel: string;
+  children: React.ReactNode;
+  testID?: string;
+}) {
+  return (
+    <Pressable
+      testID={testID}
+      accessibilityRole="button"
+      accessibilityLabel={accessibilityLabel}
+      hitSlop={8}
+      onPress={onPress}
+      style={({ pressed }) => [
+        styles.iconButton,
+        pressed && styles.iconButtonPressed,
+      ]}>
+      {children}
+    </Pressable>
+  );
+}
+
+/** Side length `GearIcon` is drawn at; any other size scales from these ratios. */
+const GEAR_SIZE = 22;
+
+/**
+ * A settings cog drawn from plain Views, so the app needs no icon font, asset
+ * or native module for its one icon.
+ *
+ * Eight stubby teeth are each rotated around the centre and then pushed
+ * outwards by a `translateY` applied *after* the rotation, so every tooth
+ * lands on its own radius instead of a bar crossing the middle. With nothing
+ * running through the centre the ring can stay a hollow outline, leaving a
+ * genuinely transparent hole that needs no knowledge of the colour behind it.
+ */
+export function GearIcon({
+  size = GEAR_SIZE,
+  color = Colors.text,
+}: {
+  size?: number;
+  color?: string;
+}) {
+  const scale = size / GEAR_SIZE;
+  const toothWidth = 3.4 * scale;
+  const toothLength = 5 * scale;
+  const toothRadius = 7.7 * scale;
+  const ringSize = 15.4 * scale;
+  const ringBorder = 3.2 * scale;
+
+  return (
+    <View style={{ width: size, height: size }}>
+      {[0, 45, 90, 135, 180, 225, 270, 315].map((angle) => (
+        <View
+          key={angle}
+          style={{
+            position: 'absolute',
+            left: (size - toothWidth) / 2,
+            top: (size - toothLength) / 2,
+            width: toothWidth,
+            height: toothLength,
+            borderRadius: toothWidth / 2,
+            backgroundColor: color,
+            transform: [{ rotate: `${angle}deg` }, { translateY: -toothRadius }],
+          }}
+        />
+      ))}
+      <View
+        style={{
+          position: 'absolute',
+          left: (size - ringSize) / 2,
+          top: (size - ringSize) / 2,
+          width: ringSize,
+          height: ringSize,
+          borderRadius: ringSize / 2,
+          borderWidth: ringBorder,
+          borderColor: color,
+        }}
+      />
+    </View>
+  );
+}
+
 export function Screen({
   children,
   style,
@@ -171,6 +258,16 @@ const styles = StyleSheet.create({
     padding: Spacing.three,
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: Colors.border,
+  },
+  iconButton: {
+    width: 40,
+    height: 40,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: Radius.pill,
+  },
+  iconButtonPressed: {
+    opacity: 0.55,
   },
   label: {
     fontSize: 15,

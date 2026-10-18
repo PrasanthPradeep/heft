@@ -2,6 +2,7 @@ import { router, useFocusEffect } from 'expo-router';
 import React, { useCallback, useState } from 'react';
 import {
   Alert,
+  Pressable,
   RefreshControl,
   ScrollView,
   StyleSheet,
@@ -108,20 +109,31 @@ export default function HomeScreen() {
         refreshControl={
           <RefreshControl refreshing={refreshing} onRefresh={refresh} />
         }>
-        <Card style={styles.summaryCard}>
-          <Text style={styles.summaryLabel}>Latest weight</Text>
-          <Text style={styles.summaryValue}>
-            {latest ? formatWeight(latest.weightKg, unit) : '--.--'}
-            <Text style={styles.summaryUnit}> {unit}</Text>
-          </Text>
-          <Text style={styles.summaryMeta}>
-            {latest
-              ? `${formatDateTime(latest.measuredAt)} · ${
-                  latest.source === 'health-connect' ? 'Health Connect' : 'Heft'
-                }`
-              : 'No measurements yet'}
-          </Text>
-        </Card>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="View insights"
+          testID="latest-weight-card"
+          onPress={() => router.push('/insights')}
+          style={({ pressed }) => [pressed && styles.summaryPressed]}>
+          <Card style={styles.summaryCard}>
+            <Text style={styles.summaryLabel}>Latest weight</Text>
+            <Text style={styles.summaryValue}>
+              {latest ? formatWeight(latest.weightKg, unit) : '--.--'}
+              <Text style={styles.summaryUnit}> {unit}</Text>
+            </Text>
+            <Text style={styles.summaryMeta}>
+              {latest
+                ? `${formatDateTime(latest.measuredAt)} · ${
+                    latest.source === 'health-connect' ? 'Health Connect' : 'Heft'
+                  }`
+                : 'No measurements yet'}
+            </Text>
+            <View style={styles.summaryHint}>
+              <Text style={styles.summaryHintText}>View insights</Text>
+              <Text style={styles.summaryChevron}>›</Text>
+            </View>
+          </Card>
+        </Pressable>
 
         <View style={styles.actions}>
           <Button
@@ -130,23 +142,11 @@ export default function HomeScreen() {
             style={styles.flex}
           />
           <Button
-            label="History"
+            label="Assistant"
             variant="secondary"
-            onPress={() => router.push('/history')}
+            onPress={() => router.push('/assistant')}
             style={styles.flex}
           />
-        </View>
-
-        <View style={styles.links}>
-          <Text style={styles.link} onPress={() => router.push('/insights')}>
-            Insights
-          </Text>
-          <Text style={styles.link} onPress={() => router.push('/assistant')}>
-            Assistant
-          </Text>
-          <Text style={styles.link} onPress={() => router.push('/settings')}>
-            Settings
-          </Text>
         </View>
 
         {showReminder ? (
@@ -179,7 +179,15 @@ export default function HomeScreen() {
 
         {error ? <Text style={styles.error}>{error}</Text> : null}
 
-        <Text style={styles.sectionTitle}>Recent</Text>
+        <View style={styles.sectionHeader}>
+          <Text style={styles.sectionTitle}>Recent</Text>
+          <Text
+            style={styles.sectionLink}
+            accessibilityRole="button"
+            onPress={() => router.push('/history')}>
+            History ›
+          </Text>
+        </View>
 
         {recent.length === 0 ? (
           <Card>
@@ -211,14 +219,6 @@ export default function HomeScreen() {
             </Card>
           ))
         )}
-
-        {entries.length > RECENT_LIMIT ? (
-          <Button
-            label="View all readings"
-            variant="secondary"
-            onPress={() => router.push('/history')}
-          />
-        ) : null}
       </ScrollView>
     </Screen>
   );
@@ -257,21 +257,31 @@ const styles = StyleSheet.create({
     color: Colors.accent,
     fontSize: 14,
   },
+  summaryPressed: {
+    opacity: 0.85,
+  },
+  summaryHint: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.one,
+    marginTop: Spacing.two,
+  },
+  summaryHintText: {
+    color: Colors.accent,
+    fontWeight: '700',
+    fontSize: 14,
+  },
+  summaryChevron: {
+    color: Colors.accent,
+    fontSize: 18,
+    lineHeight: 18,
+    fontWeight: '700',
+  },
   actions: {
     flexDirection: 'row',
     gap: Spacing.two,
   },
   flex: { flex: 1 },
-  links: {
-    flexDirection: 'row',
-    gap: Spacing.four,
-    paddingVertical: Spacing.one,
-  },
-  link: {
-    color: Colors.brand,
-    fontWeight: '700',
-    fontSize: 15,
-  },
   reminder: {
     color: Colors.warning,
     backgroundColor: Colors.warningTint,
@@ -288,11 +298,21 @@ const styles = StyleSheet.create({
     borderRadius: Radius.sm,
     padding: Spacing.three,
   },
+  sectionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginTop: Spacing.two,
+  },
   sectionTitle: {
     fontSize: 18,
     fontWeight: '700',
     color: Colors.text,
-    marginTop: Spacing.two,
+  },
+  sectionLink: {
+    color: Colors.brand,
+    fontWeight: '700',
+    fontSize: 15,
   },
   entry: {
     flexDirection: 'row',

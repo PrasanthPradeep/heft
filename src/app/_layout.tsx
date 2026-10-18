@@ -2,6 +2,7 @@ import { Stack, router, useSegments } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import React, { useEffect, useRef } from 'react';
 
+import { GearIcon, IconButton } from '@/components/ui';
 import { Colors } from '@/constants/theme';
 import { syncHealthConnect } from '@/features/health-connect/weightSync';
 import {
@@ -56,7 +57,20 @@ function AppNavigator() {
         contentStyle: { backgroundColor: Colors.background },
       }}>
       <Stack.Screen name="onboarding" options={{ headerShown: false }} />
-      <Stack.Screen name="index" options={{ title: 'Heft' }} />
+      <Stack.Screen
+        name="index"
+        options={{
+          title: 'Heft',
+          headerRight: () => (
+            <IconButton
+              accessibilityLabel="Settings"
+              testID="header-settings"
+              onPress={() => router.push('/settings')}>
+              <GearIcon />
+            </IconButton>
+          ),
+        }}
+      />
       <Stack.Screen name="add-weight" options={{ title: 'Add weight' }} />
       <Stack.Screen name="history" options={{ title: 'History' }} />
       <Stack.Screen name="insights" options={{ title: 'Insights' }} />
