@@ -172,6 +172,52 @@ change. For Health Connect to work, the device also needs the
 [Health Connect app](https://play.google.com/store/apps/details?id=com.google.android.apps.healthdata)
 installed (or Android 14+, where it is built in).
 
+## Releasing
+
+### A shareable APK
+
+EAS Build produces an **AAB** by default, and an AAB cannot be installed
+directly. The `preview` profile is set up for internal distribution and asks for
+an APK:
+
+```bash
+npx eas-cli@latest build --platform android --profile preview
+```
+
+The build page returns a URL/QR for the `.apk`; recipients allow *install unknown
+apps* and tap it. To build locally instead:
+
+```bash
+npx expo prebuild --platform android
+cd android && ./gradlew assembleRelease   # app/build/outputs/apk/release/
+```
+
+The generated `release` block signs with the **debug keystore**, so give it a
+real release keystore (and keep that file safe) before handing an APK to anyone.
+Android only installs an update over an existing app when the signature matches,
+so losing the key means every user has to uninstall and reinstall.
+
+### Over-the-air updates
+
+`expo-updates` is configured (see `updates` / `runtimeVersion` in `app.json`), so
+JavaScript and asset changes ship without a new APK:
+
+```bash
+npx eas-cli@latest update --channel preview --message "fix the header" --environment preview
+```
+
+A build carrying the `preview` channel downloads the update in the background
+and applies it on the **next** launch. `fallbackToCacheTimeout` is `0`, so a slow
+or missing network never delays startup — which matters for an app whose core is
+offline.
+
+Only JavaScript and assets travel this way. Anything native — a new native
+module, a new permission, the icon or splash, an Expo SDK upgrade — needs a new
+build. `runtimeVersion` uses the `appVersion` policy, so **bump `expo.version`
+whenever the native side changes**: that makes existing installs ignore an
+incompatible update rather than load it and break. Development builds keep
+loading from the local Metro server and are unaffected.
+
 ## Data portability
 
 - **Export** — Settings shares the full history as **CSV** or **JSON** text
@@ -289,7 +335,7 @@ src/
 
 ## Schema
 
-`PRAGMA user_version` drives migrations (see `src/db/migrations.ts`). Schema v4:
+`PRAGMA user_version` drives migrations (see `src/db/migrations.ts`). Schema v5:
 
 | Table              | Purpose                                              |
 | ------------------ | ---------------------------------------------------- |
