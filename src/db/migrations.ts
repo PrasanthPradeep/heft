@@ -172,6 +172,17 @@ export const MIGRATIONS: Migration[] = [
       `);
     },
   },
+  {
+    version: 5,
+    up: async (db) => {
+      await db.execAsync(`
+        -- Left over from the removed cloud-sync schema. Nothing reads or writes
+        -- it any more, so drop it from databases that predate this version. A
+        -- fresh install never created it, hence IF EXISTS.
+        DROP TABLE IF EXISTS sync_outbox;
+      `);
+    },
+  },
 ];
 
 /**

@@ -207,11 +207,13 @@ development build:
   falls back to local storage instead of blocking.
 - Granting read + write imports existing weight records into the cache.
 - A new reading appears in Health Connect and back in Heft.
-- Put the device offline, add a reading: it is marked **NOT SYNCED** and listed
-  in Settings as waiting; go online and **Sync now** uploads it without
-  duplicating.
-- Revoke permission mid-use: the app keeps working from the cache and queued
-  readings stay put.
+- Add a reading while Health Connect is reachable: it appears in Health Connect
+  and back in Heft. Health Connect stores everything on the device, so this
+  works with no network at all.
+- Revoke Health Connect write access mid-use (or otherwise make it unreachable):
+  the app keeps working from its cache, and each new reading is saved on the
+  device, marked **NOT SYNCED** and listed at the top of the dashboard as
+  waiting. Restore access and **Sync now** uploads it without duplicating.
 - A Health Connect record from another app cannot be edited or deleted in Heft.
 - Switching to local storage stops syncing and does not delete Health Connect
   data.
