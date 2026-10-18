@@ -71,12 +71,33 @@ export async function initializeHealthConnect(): Promise<boolean> {
   }
 }
 
+/** Remembers a successful initialisation so the native call happens at most once. */
+let initialized = false;
+
+/**
+ * Initialises the Health Connect client if it is not ready yet.
+ *
+ * Every Health Connect operation — including `requestPermission` and
+ * `getGrantedPermissions` — fails with `ClientNotInitialized` until this has
+ * succeeded, and the client is per-process. Routing every call through this
+ * guard means no caller can forget it.
+ *
+ * A failed attempt is not cached, so the next call retries; that keeps the
+ * "Health Connect installed later" case working.
+ */
+export async function ensureHealthConnectReady(): Promise<boolean> {
+  if (initialized) return true;
+  const ready = await initializeHealthConnect();
+  if (ready) initialized = true;
+  return ready;
+}
+
 /**
  * Reads the currently granted weight permissions. Permissions can be revoked at
  * any time, so callers must re-check before every read or write.
  */
 export async function getWeightPermissionState(): Promise<WeightPermissionState> {
-  if (Platform.OS !== 'android') return NO_PERMISSIONS;
+  if (!(await ensureHealthConnectReady())) return NO_PERMISSIONS;
 
   try {
     const granted = await getGrantedPermissions();
@@ -100,7 +121,7 @@ export async function getWeightPermissionState(): Promise<WeightPermissionState>
  * The returned state reflects what the user actually allowed.
  */
 export async function requestWeightPermissions(): Promise<WeightPermissionState> {
-  if (Platform.OS !== 'android') return NO_PERMISSIONS;
+  if (!(await ensureHealthConnectReady())) return NO_PERMISSIONS;
 
   try {
     await requestPermission(WEIGHT_PERMISSIONS);
@@ -127,7 +148,7 @@ export function hasActivityAccess(state: ActivityPermissionState): boolean {
 
 /** Reads the currently granted activity permissions (steps + exercise). */
 export async function getActivityPermissionState(): Promise<ActivityPermissionState> {
-  if (Platform.OS !== 'android') return NO_ACTIVITY_PERMISSIONS;
+  if (!(await ensureHealthConnectReady())) return NO_ACTIVITY_PERMISSIONS;
 
   try {
     const granted = await getGrantedPermissions();
@@ -150,7 +171,7 @@ export async function getActivityPermissionState(): Promise<ActivityPermissionSt
  * from Settings, so onboarding never asks for more than body weight.
  */
 export async function requestActivityPermissions(): Promise<ActivityPermissionState> {
-  if (Platform.OS !== 'android') return NO_ACTIVITY_PERMISSIONS;
+  if (!(await ensureHealthConnectReady())) return NO_ACTIVITY_PERMISSIONS;
 
   try {
     await requestPermission(ACTIVITY_PERMISSIONS);

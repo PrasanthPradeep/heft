@@ -3,6 +3,8 @@ import {
   readRecords,
 } from 'react-native-health-connect';
 
+import { ensureHealthConnectReady } from '@/features/health-connect/healthConnectPermissions';
+
 import { localDayKey } from './activityCalculations';
 import type { ActivitySession, ActivitySnapshot, DailyActivity } from './types';
 
@@ -92,6 +94,10 @@ export async function readActivity(
   startTime: string,
   endTime: string
 ): Promise<ActivitySnapshot> {
+  if (!(await ensureHealthConnectReady())) {
+    throw new Error('Health Connect is not available.');
+  }
+
   const [stepDays, exerciseDays, sessions] = await Promise.all([
     readStepDays(startTime, endTime),
     readExerciseDays(startTime, endTime),

@@ -8,6 +8,8 @@ import {
 
 import { normalizeWeightKg } from '@/features/weight/weightCalculations';
 
+import { ensureHealthConnectReady } from './healthConnectPermissions';
+
 /** A weight record as returned by Health Connect. */
 export type HealthConnectWeight = {
   externalId: string;
@@ -30,10 +32,23 @@ const MAX_PAGES = 50;
 const PAGE_SIZE = 1000;
 
 /**
+ * Every record operation needs an initialised client. Callers already treat a
+ * throw as "Health Connect is not usable right now" — queueing writes and
+ * leaving caches untouched — so failing loudly here is the safe behaviour.
+ */
+async function requireReadyClient(): Promise<void> {
+  if (!(await ensureHealthConnectReady())) {
+    throw new Error('Health Connect is not available.');
+  }
+}
+
+/**
  * Writes a single manual weight measurement and returns the Health Connect
  * record id. Health Connect rejects invalid values, and so do we.
  */
 export async function writeWeight(input: WriteWeightInput): Promise<string> {
+  await requireReadyClient();
+
   const weightKg = normalizeWeightKg(input.weightKg);
   const time = new Date(input.measuredAt).toISOString();
 
@@ -64,6 +79,8 @@ export async function readWeightHistory(
   startTime: string,
   endTime: string
 ): Promise<HealthConnectWeight[]> {
+  await requireReadyClient();
+
   const results: HealthConnectWeight[] = [];
   let pageToken: string | undefined;
 
@@ -107,5 +124,6 @@ export async function deleteWeightRecordsByClientId(
   clientRecordIds: string[]
 ): Promise<void> {
   if (clientRecordIds.length === 0) return;
+  await requireReadyClient();
   await deleteRecordsByUuids('Weight', [], clientRecordIds);
 }
