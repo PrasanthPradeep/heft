@@ -244,6 +244,32 @@ whenever the native side changes**: that makes existing installs ignore an
 incompatible update rather than load it and break. Development builds keep
 loading from the local Metro server and are unaffected.
 
+### Shipping from `stable`
+
+`main` is where work lands; **`stable` is what phones run**. Open a pull request
+from `main` into `stable` and merge it — the merge *is* the release action, and
+`.github/workflows/publish-update.yml` publishes the update for you.
+
+The workflow runs on every push to `stable` and on pull requests into it. It
+installs, typechecks, lints and tests first, so a red run means nothing shipped.
+Pull requests stop after the checks, which is how you see a green tick before
+merging; pushes continue on to `eas update --channel preview`. It can also be run
+by hand from the Actions tab (`workflow_dispatch`).
+
+The one-time setup is an Expo access token stored as a repository secret:
+
+```bash
+gh secret set EXPO_TOKEN     # prompted for the value, nothing is echoed
+```
+
+Create the token at <https://expo.dev/settings/access-tokens>. Expo's CLI has no
+command to mint one, so that step is manual.
+
+The trigger is a git branch, but the *lane* the update ships on is the `preview`
+channel, because that is what the installed APK subscribes to — a channel is
+baked into a build, so renaming it would mean rebuilding and reinstalling the
+APK. To publish out of band, run the `eas update` command above by hand.
+
 ### Brand assets
 
 The icons, splash mark and header wordmark are all generated from the logo
