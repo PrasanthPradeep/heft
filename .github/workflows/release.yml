@@ -122,11 +122,28 @@ jobs:
 
       # Keeps the friend-facing install instructions in every release without
       # retyping them, with that release's own hash filled in.
+      #
+      # The template has to be found somewhere that actually has it: a tag can
+      # predate the file, in which case the copy on the default branch is the one
+      # to use. If neither exists, fall back to a short built-in note, which still
+      # carries the APK SHA-256 marker that the upload path looks for.
       - name: Build the release notes
         run: |
           sha=$(cut -d' ' -f1 apk.sha256)
-          sed "s/{VERSION}/${VERSION}/g; s/{SHA256}/${sha}/g" \
-            .github/release-notes.md > notes.md
+          template=""
+          if [ -f .github/release-notes.md ]; then
+            template=".github/release-notes.md"
+          elif git show origin/main:.github/release-notes.md > /tmp/notes-template.md 2>/dev/null; then
+            template="/tmp/notes-template.md"
+          fi
+          if [ -n "$template" ]; then
+            sed "s/{VERSION}/${VERSION}/g; s/{SHA256}/${sha}/g" "$template" > notes.md
+            echo "notes built from $template"
+          else
+            printf 'Offline-first weight tracking for Android. No account, no server, no subscription.\n\nPackage `com.heft.app`, version %s.\n\nAPK SHA-256\n\n```\n%s\n```\n' \
+              "$VERSION" "$sha" > notes.md
+            echo "no template available; using a minimal note"
+          fi
           head -5 notes.md
 
       - name: Publish the GitHub Release
