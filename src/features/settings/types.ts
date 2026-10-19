@@ -4,15 +4,26 @@ export type StorageMode = 'health-connect' | 'local';
 
 export type WeightUnit = 'kg' | 'lb';
 
+export type ReminderRepeat = 'daily' | 'weekly';
+
 export type AppPreferences = {
   storageMode: StorageMode;
   onboardingCompleted: boolean;
   weightUnit: WeightUnit;
   /** Optional goal weight, always stored in kilograms. */
   goalWeightKg: number | null;
+  /** Weigh-in reminder. Off by default, and so is the notification permission. */
   reminderEnabled: boolean;
+  reminderRepeat: ReminderRepeat;
+  /** 1 = Sunday … 7 = Saturday, matching the OS weekday convention. */
+  reminderWeekday: number;
   reminderHour: number;
   reminderMinute: number;
+  /** Independent water reminder: prompts spread across a daily window. */
+  waterReminderEnabled: boolean;
+  waterStartHour: number;
+  waterEndHour: number;
+  waterIntervalHours: number;
   /** How the built-in assistant reaches a model. Off by default. */
   aiMethod: AiMethod;
   /** Selected model slug, shared by both connection methods. */
@@ -27,8 +38,15 @@ export const DEFAULT_PREFERENCES: AppPreferences = {
   weightUnit: 'kg',
   goalWeightKg: null,
   reminderEnabled: false,
+  reminderRepeat: 'daily',
+  // Monday: a week is easier to plan at its start than in its middle.
+  reminderWeekday: 2,
   reminderHour: 7,
   reminderMinute: 0,
+  waterReminderEnabled: false,
+  waterStartHour: 9,
+  waterEndHour: 21,
+  waterIntervalHours: 2,
   aiMethod: 'none',
   aiModel: null,
   aiShareHealth: false,
@@ -37,6 +55,7 @@ export const DEFAULT_PREFERENCES: AppPreferences = {
 const STORAGE_MODES: StorageMode[] = ['health-connect', 'local'];
 const WEIGHT_UNITS: WeightUnit[] = ['kg', 'lb'];
 const AI_METHODS: AiMethod[] = ['none', 'chatgpt', 'api-key'];
+const REMINDER_REPEATS: ReminderRepeat[] = ['daily', 'weekly'];
 
 function clampInt(
   value: unknown,
@@ -87,12 +106,42 @@ export function coercePreferences(input: unknown): AppPreferences {
       ? raw.aiModel.trim()
       : null;
 
+  const reminderRepeat = REMINDER_REPEATS.includes(
+    raw.reminderRepeat as ReminderRepeat
+  )
+    ? (raw.reminderRepeat as ReminderRepeat)
+    : DEFAULT_PREFERENCES.reminderRepeat;
+
+  const waterStartHour = clampInt(
+    raw.waterStartHour,
+    0,
+    23,
+    DEFAULT_PREFERENCES.waterStartHour
+  );
+  const waterEndHour = clampInt(
+    raw.waterEndHour,
+    0,
+    23,
+    DEFAULT_PREFERENCES.waterEndHour
+  );
+
+  // A window that ends before it starts would schedule nothing at all, which is
+  // worse than falling back: the switch would read "on" and never fire once.
+  const waterWindowIsSane = waterEndHour >= waterStartHour;
+
   return {
     storageMode,
     onboardingCompleted: raw.onboardingCompleted === true,
     weightUnit,
     goalWeightKg,
     reminderEnabled: raw.reminderEnabled === true,
+    reminderRepeat,
+    reminderWeekday: clampInt(
+      raw.reminderWeekday,
+      1,
+      7,
+      DEFAULT_PREFERENCES.reminderWeekday
+    ),
     reminderHour: clampInt(
       raw.reminderHour,
       0,
@@ -104,6 +153,19 @@ export function coercePreferences(input: unknown): AppPreferences {
       0,
       59,
       DEFAULT_PREFERENCES.reminderMinute
+    ),
+    waterReminderEnabled: raw.waterReminderEnabled === true,
+    waterStartHour: waterWindowIsSane
+      ? waterStartHour
+      : DEFAULT_PREFERENCES.waterStartHour,
+    waterEndHour: waterWindowIsSane
+      ? waterEndHour
+      : DEFAULT_PREFERENCES.waterEndHour,
+    waterIntervalHours: clampInt(
+      raw.waterIntervalHours,
+      1,
+      12,
+      DEFAULT_PREFERENCES.waterIntervalHours
     ),
     aiMethod,
     aiModel,

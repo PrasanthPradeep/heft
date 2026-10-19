@@ -31,7 +31,8 @@
         "android.permission.health.READ_WEIGHT",
         "android.permission.health.WRITE_WEIGHT",
         "android.permission.health.READ_STEPS",
-        "android.permission.health.READ_EXERCISE"
+        "android.permission.health.READ_EXERCISE",
+        "android.permission.POST_NOTIFICATIONS"
       ]
     },
     "web": {
@@ -73,6 +74,14 @@
               "armeabi-v7a"
             ]
           }
+        }
+      ],
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/images/notification-icon.png",
+          "color": "#067D52",
+          "defaultChannel": "heft-reminders"
         }
       ],
       "expo-secure-store"

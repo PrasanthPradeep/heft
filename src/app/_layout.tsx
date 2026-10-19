@@ -5,6 +5,7 @@ import React, { useEffect, useRef } from 'react';
 import { GearIcon, IconButton, Wordmark } from '@/components/ui';
 import { Colors } from '@/constants/theme';
 import { syncHealthConnect } from '@/features/health-connect/weightSync';
+import { useReminderSync } from '@/features/reminders/useReminderSync';
 import {
   PreferencesProvider,
   usePreferences,
@@ -47,6 +48,7 @@ function AppNavigator() {
   const { ready, preferences } = usePreferences();
   useOnboardingRedirect(ready, preferences.onboardingCompleted);
   useLaunchSync(ready, preferences.storageMode);
+  useReminderSync(ready, preferences);
 
   return (
     <Stack

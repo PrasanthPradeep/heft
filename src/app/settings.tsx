@@ -42,14 +42,34 @@ import {
   type ActivityPermissionState,
 } from '@/features/health-connect/healthConnectPermissions';
 import {
+  getReminderPermission,
+  requestReminderPermission,
+  type ReminderPermission,
+} from '@/features/reminders/notifications';
+import {
+  WATER_INTERVALS,
+  WEEKDAYS,
+  clockTime,
+  describeWaterWindow,
+  pickReminderSettings,
+} from '@/features/reminders/schedule';
+import {
   loadLastSyncedAt,
 } from '@/features/settings/preferenceStore';
 import { usePreferences } from '@/features/settings/preferences';
-import type { WeightUnit } from '@/features/settings/types';
+import type {
+  AppPreferences,
+  ReminderRepeat,
+  WeightUnit,
+} from '@/features/settings/types';
 import type { WeightEntry } from '@/features/weight/types';
 import { getWeightRepository } from '@/features/weight/weightRepository';
 
 const UNITS: WeightUnit[] = ['kg', 'lb'];
+const REPEATS: ReminderRepeat[] = ['daily', 'weekly'];
+
+/** Which clock the open time picker is editing. */
+type PickerTarget = 'weighIn' | 'waterStart' | 'waterEnd';
 
 const REPOSITORY_URL = 'https://github.com/PrasanthPradeep/heft';
 
@@ -63,7 +83,9 @@ export default function SettingsScreen() {
   const [lastSyncedAt, setLastSyncedAt] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [importText, setImportText] = useState('');
-  const [showTimePicker, setShowTimePicker] = useState(false);
+  const [activePicker, setActivePicker] = useState<PickerTarget | null>(null);
+  const [reminderPermission, setReminderPermission] =
+    useState<ReminderPermission>('undetermined');
   const [activityAccess, setActivityAccess] = useState<ActivityPermissionState>({
     canReadSteps: false,
     canReadExercise: false,
@@ -71,16 +93,20 @@ export default function SettingsScreen() {
   const [activitySteps7d, setActivitySteps7d] = useState<number | null>(null);
 
   const load = useCallback(async () => {
-    const [rows, syncedAt, access, activityDays] = await Promise.all([
+    const [rows, syncedAt, access, activityDays, permission] = await Promise.all([
       repository.listWeights(),
       loadLastSyncedAt(),
       getActivityPermissionState(),
       loadDailyActivity(),
+      // Re-read on every focus, since it can change in system settings while
+      // Heft sits in the background.
+      getReminderPermission(),
     ]);
     setEntries(rows);
     setLastSyncedAt(syncedAt);
     setActivityAccess(access);
     setActivitySteps7d(summarizeActivity(activityDays).averageSteps7d);
+    setReminderPermission(permission);
   }, [repository]);
 
   useFocusEffect(
@@ -286,14 +312,101 @@ export default function SettingsScreen() {
     );
   }
 
+  const pickerTimes: Record<PickerTarget, Date> = {
+    weighIn: new Date(
+      2020,
+      0,
+      1,
+      preferences.reminderHour,
+      preferences.reminderMinute
+    ),
+    waterStart: new Date(2020, 0, 1, preferences.waterStartHour, 0),
+    waterEnd: new Date(2020, 0, 1, preferences.waterEndHour, 0),
+  };
+
   function onTimeChange(event: DateTimePickerEvent, value?: Date) {
-    setShowTimePicker(Platform.OS === 'ios');
-    if (event.type === 'dismissed' || !value) return;
-    updatePreferences({
-      reminderHour: value.getHours(),
-      reminderMinute: value.getMinutes(),
-    }).catch(() => {});
+    // iOS keeps a spinner open while it is being scrolled; Android closes it as
+    // soon as the user confirms or dismisses.
+    const target = activePicker;
+    setActivePicker(Platform.OS === 'ios' ? target : null);
+    if (event.type === 'dismissed' || !value || !target) return;
+
+    if (target === 'weighIn') {
+      updatePreferences({
+        reminderHour: value.getHours(),
+        reminderMinute: value.getMinutes(),
+      }).catch(() => {});
+    } else if (target === 'waterStart') {
+      updatePreferences({ waterStartHour: value.getHours() }).catch(() => {});
+    } else {
+      updatePreferences({ waterEndHour: value.getHours() }).catch(() => {});
+    }
   }
+
+  /**
+   * The permission request lives here and nowhere else. On launch Heft stays
+   * silent; the dialog only appears because the user just switched a reminder
+   * on. A refusal is not treated as a failure either — the switch stays where
+   * they put it, the card says what is blocked, and the dashboard banner keeps
+   * reminding them in the meantime.
+   */
+  async function enableReminder(patch: Partial<AppPreferences>) {
+    const permission = await requestReminderPermission();
+    setReminderPermission(permission);
+    await updatePreferences(patch);
+
+    if (permission === 'denied') {
+      Alert.alert(
+        'Notifications are off',
+        'Android is blocking Heft from posting notifications. Until you allow them, reminders appear on the dashboard instead.',
+        [
+          { text: 'Not now', style: 'cancel' },
+          { text: 'Open settings', onPress: () => Linking.openSettings() },
+        ]
+      );
+    }
+  }
+
+  function toggleWeighIn(enabled: boolean) {
+    if (!enabled) {
+      updatePreferences({ reminderEnabled: false }).catch(() => {});
+      return;
+    }
+    enableReminder({ reminderEnabled: true }).catch(() => {});
+  }
+
+  function toggleWater(enabled: boolean) {
+    if (!enabled) {
+      updatePreferences({ waterReminderEnabled: false }).catch(() => {});
+      return;
+    }
+    enableReminder({ waterReminderEnabled: true }).catch(() => {});
+  }
+
+  const remindersOn =
+    preferences.reminderEnabled || preferences.waterReminderEnabled;
+
+  const reminderNotice = !remindersOn ? null : reminderPermission ===
+    'unavailable' ? (
+    <Card style={styles.stack}>
+      <Text style={styles.warningText}>
+        This build cannot post notifications, so these reminders will not
+        appear. Installing the latest Heft APK turns them on.
+      </Text>
+    </Card>
+  ) : reminderPermission === 'denied' ? (
+    <Card style={styles.stack}>
+      <Text style={styles.warningText}>
+        Android is blocking Heft notifications. The dashboard banner still works
+        — allow notifications to get the timed reminders as well.
+      </Text>
+      <Button
+        label="Open notification settings"
+        variant="secondary"
+        onPress={() => Linking.openSettings()}
+      />
+    </Card>
+  ) : null;
 
   return (
     <Screen edges={['left', 'right']}>
@@ -412,30 +525,151 @@ export default function SettingsScreen() {
             <Text style={styles.cardText}>Remind me to weigh in</Text>
             <Switch
               value={preferences.reminderEnabled}
-              onValueChange={(value) =>
-                updatePreferences({ reminderEnabled: value })
-              }
+              onValueChange={toggleWeighIn}
             />
           </View>
+
           {preferences.reminderEnabled ? (
-            <Pressable
-              style={styles.timeButton}
-              onPress={() => setShowTimePicker(true)}>
-              <Text style={styles.timeText}>
-                {String(preferences.reminderHour).padStart(2, '0')}:
-                {String(preferences.reminderMinute).padStart(2, '0')}
-              </Text>
-            </Pressable>
+            <>
+              <View style={styles.unitRow}>
+                {REPEATS.map((repeat) => {
+                  const selected = preferences.reminderRepeat === repeat;
+                  return (
+                    <Pressable
+                      key={repeat}
+                      onPress={() =>
+                        updatePreferences({ reminderRepeat: repeat })
+                      }
+                      style={[styles.unit, selected && styles.unitSelected]}>
+                      <Text
+                        style={[
+                          styles.unitText,
+                          selected && styles.unitTextSelected,
+                        ]}>
+                        {repeat === 'daily' ? 'Every day' : 'Once a week'}
+                      </Text>
+                    </Pressable>
+                  );
+                })}
+              </View>
+
+              {preferences.reminderRepeat === 'weekly' ? (
+                <View style={styles.weekRow}>
+                  {WEEKDAYS.map((day) => {
+                    const selected = preferences.reminderWeekday === day.value;
+                    return (
+                      <Pressable
+                        key={day.value}
+                        accessibilityLabel={day.long}
+                        onPress={() =>
+                          updatePreferences({ reminderWeekday: day.value })
+                        }
+                        style={[styles.dayChip, selected && styles.unitSelected]}>
+                        <Text
+                          style={[
+                            styles.dayChipText,
+                            selected && styles.unitTextSelected,
+                          ]}>
+                          {day.short}
+                        </Text>
+                      </Pressable>
+                    );
+                  })}
+                </View>
+              ) : null}
+
+              <Pressable
+                style={styles.timeButton}
+                onPress={() => setActivePicker('weighIn')}>
+                <Text style={styles.timeText}>
+                  {clockTime(
+                    preferences.reminderHour,
+                    preferences.reminderMinute
+                  )}
+                </Text>
+              </Pressable>
+            </>
           ) : null}
+
           <Description>
-            Heft reminds you inside the app when you have not logged a reading
-            that day. No notification permission is requested.
+            Heft posts a notification at this time, and the dashboard banner
+            still reminds you if you have not logged a reading that day.
           </Description>
         </Card>
 
-        {showTimePicker ? (
+        <Label>Water reminder</Label>
+        <Card style={styles.stack}>
+          <View style={styles.switchRow}>
+            <Text style={styles.cardText}>Remind me to drink water</Text>
+            <Switch
+              value={preferences.waterReminderEnabled}
+              onValueChange={toggleWater}
+            />
+          </View>
+
+          {preferences.waterReminderEnabled ? (
+            <>
+              <View style={styles.switchRow}>
+                <Text style={styles.cardText}>First at</Text>
+                <Pressable
+                  style={styles.timeButton}
+                  onPress={() => setActivePicker('waterStart')}>
+                  <Text style={styles.timeText}>
+                    {clockTime(preferences.waterStartHour)}
+                  </Text>
+                </Pressable>
+              </View>
+
+              <View style={styles.switchRow}>
+                <Text style={styles.cardText}>Last at</Text>
+                <Pressable
+                  style={styles.timeButton}
+                  onPress={() => setActivePicker('waterEnd')}>
+                  <Text style={styles.timeText}>
+                    {clockTime(preferences.waterEndHour)}
+                  </Text>
+                </Pressable>
+              </View>
+
+              <View style={styles.unitRow}>
+                {WATER_INTERVALS.map((hours) => {
+                  const selected = preferences.waterIntervalHours === hours;
+                  return (
+                    <Pressable
+                      key={hours}
+                      onPress={() =>
+                        updatePreferences({ waterIntervalHours: hours })
+                      }
+                      style={[styles.unit, selected && styles.unitSelected]}>
+                      <Text
+                        style={[
+                          styles.unitText,
+                          selected && styles.unitTextSelected,
+                        ]}>
+                        {hours}h
+                      </Text>
+                    </Pressable>
+                  );
+                })}
+              </View>
+
+              <Text style={styles.cardText}>
+                {describeWaterWindow(pickReminderSettings(preferences))}
+              </Text>
+            </>
+          ) : null}
+
+          <Description>
+            Silent notifications spaced across the day. They are scheduled on
+            this device and nothing about them leaves the phone.
+          </Description>
+        </Card>
+
+        {reminderNotice}
+
+        {activePicker ? (
           <DateTimePicker
-            value={new Date(2020, 0, 1, preferences.reminderHour, preferences.reminderMinute)}
+            value={pickerTimes[activePicker]}
             mode="time"
             display={Platform.OS === 'ios' ? 'spinner' : 'default'}
             onChange={onTimeChange}
@@ -558,6 +792,21 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: Spacing.two,
   },
+  weekRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: Spacing.one,
+  },
+  dayChip: {
+    paddingVertical: Spacing.two,
+    paddingHorizontal: Spacing.three,
+    borderWidth: 1.5,
+    borderColor: Colors.border,
+    borderRadius: Radius.pill,
+    backgroundColor: Colors.surface,
+  },
+  dayChipText: { fontSize: 13, fontWeight: '600', color: Colors.text },
+  warningText: { color: Colors.warning, lineHeight: 21 },
   timeButton: {
     borderWidth: 1,
     borderColor: Colors.border,

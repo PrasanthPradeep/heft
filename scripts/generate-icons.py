@@ -205,6 +205,13 @@ compose(192, LOGO_GREEN, WHITE, MARK_NATIVE, rounded=True).save(
 opaque(compose(1024, DARK, WHITE, MARK_NATIVE)).save(
     f'{OUT}/ios-icon-dark.png')
 
+# 7. Notification icon for the Android status bar. The OS masks it to a single
+#    colour and draws it at 24dp, so only the alpha channel matters here, and
+#    the mark is deliberately tight: the safe zone that keeps adaptive icons off
+#    the launcher edge would leave this one looking undersized.
+compose(96, LOGO_GREEN, WHITE, 0.92, with_field=False).save(
+    f'{OUT}/notification-icon.png')
+
 for f in sorted(os.listdir(OUT)):
     if f.endswith('.png') and ('icon' in f or 'favicon' in f):
         im = Image.open(os.path.join(OUT, f))

@@ -38,7 +38,7 @@ pending_weights
    storage. If Health Connect is unavailable or permission is denied, Heft offers
    local storage instead of blocking.
 2. **Dashboard** (`src/app/index.tsx`) — latest reading, the recent list, a
-   one-tap Sync now, a pull-to-refresh, and an in-app weigh-in reminder.
+   one-tap Sync now, a pull-to-refresh, and the weigh-in reminder.
 3. **Add / edit** (`src/app/add-weight.tsx`, `src/features/weight/WeightEntryForm.tsx`)
    — a manual form (weight, date/time, note). The same screen handles edits.
 4. **History** (`src/app/history.tsx`) — the full list with edit and delete.
@@ -252,8 +252,14 @@ generated `android/gradle.properties`, whose `reactNativeArchitectures` mirrors
 locally, or the local APK stays arm64-only — the same silent failure, this time
 reproduced on your own machine.
 
+Native dependencies behave the same way. `expo-notifications` contributes the
+status-bar icon and the `POST_NOTIFICATIONS` permission from `app.json`, so a
+checkout that has not been prebuilt since it was added compiles an APK without
+them. Cloud builds prebuild from a clean tree and are unaffected.
+
 This is packaging only. Installed apps keep working and keep receiving
-over-the-air updates either way, and `runtimeVersion` stays `1.0.0`.
+over-the-air updates either way, and `runtimeVersion` stays on `appVersion`, so
+it follows `expo.version` without anyone having to remember to change it.
 
 `expo-dev-client` is in `dependencies`, so its launcher is compiled into release
 builds too, at about 4 MB of dead weight. It is only needed by the `development`
@@ -546,6 +552,16 @@ development build:
   matches what is sent.
 - Settings footer shows the version and a **GitHub** link that opens the
   repository.
+- Reminders: switch on **Remind me to weigh in** and accept the permission; the
+  OS now holds the schedule (`adb shell dumpsys alarm | grep -i heft` lists it).
+  Deny the permission instead: the switch stays on, the card says why, and the
+  dashboard banner still appears.
+- Water reminder: choose a window and an interval, and check the summary line
+  reads like **7 a day, every 2 hours from 09:00 to 21:00**.
+- Restart the phone, then for the decisive check run
+  `adb shell dumpsys alarm | grep -i heft` **before** opening Heft: the module is
+  supposed to restore the schedule on boot, and opening the app would rebuild it
+  anyway and hide the answer.
 - The **Data & privacy** card names the update check as the only network request
   the app makes, rather than claiming nothing leaves the device.
 
@@ -612,6 +628,10 @@ src/
       types.ts                      AppPreferences + coercion
       preferenceStore.ts            JSON blob persisted in SQLite
       preferences.tsx               React context provider
+    reminders/
+      schedule.ts                   pure trigger math: what fires, and when
+      notifications.ts              permission, channel, OS scheduling
+      useReminderSync.ts            reschedules on launch and on any change
   lib/format.ts                     deterministic formatting helpers
 ```
 
@@ -648,8 +668,9 @@ mode-specific.
 - Assistant: off by default. When on, requests go straight to OpenAI with your
   own credentials. Weight/trend data is only attached after you turn on **Share
   health data with the AI**, which shows exactly what will be sent.
-- Reminders are **in-app only** — Heft does not request the notification
-  permission.
+- Reminders are **off by default**. Switching one on is the only moment Heft asks
+  Android for the notification permission; nothing prompts on launch. The alerts
+  are scheduled by the OS on the device, so nothing about them is sent anywhere.
 
 ## Known limitations / next steps
 
@@ -658,7 +679,12 @@ mode-specific.
 - **Push-then-pull sync only.** Heft does not reconcile Health Connect edits made
   by other apps for records it already cached beyond re-reading the window.
 - **Import is local-only** by design, to avoid duplicating Health Connect data.
-- **No native notifications.** The reminder is a banner shown inside the app.
+- **Reminders survive a restart, but battery management can delay them.** The
+  notifications module restores its own schedule after a reboot, and Heft rebuilds
+  it on every launch as well. They are deliberately *inexact* alarms — which is
+  what avoids needing the exact-alarm permission — so a phone in Doze, or one with
+  an aggressive OEM battery saver, can deliver them late. The dashboard banner is
+  unaffected, and nothing is ever pushed from a server.
 - **ChatGPT sign-in is experimental on mobile.** It relies on intercepting a
   loopback redirect inside a WebView and skips ID-token signature verification.
   It cannot be fully verified without a physical device; the API-key path is the

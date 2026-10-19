@@ -16,8 +16,14 @@ describe('coercePreferences', () => {
         weightUnit: 'lb',
         goalWeightKg: 68.5,
         reminderEnabled: true,
+        reminderRepeat: 'weekly',
+        reminderWeekday: 5,
         reminderHour: 6,
         reminderMinute: 30,
+        waterReminderEnabled: true,
+        waterStartHour: 8,
+        waterEndHour: 20,
+        waterIntervalHours: 3,
         aiMethod: 'chatgpt',
         aiModel: 'gpt-5',
         aiShareHealth: true,
@@ -28,8 +34,14 @@ describe('coercePreferences', () => {
       weightUnit: 'lb',
       goalWeightKg: 68.5,
       reminderEnabled: true,
+      reminderRepeat: 'weekly',
+      reminderWeekday: 5,
       reminderHour: 6,
       reminderMinute: 30,
+      waterReminderEnabled: true,
+      waterStartHour: 8,
+      waterEndHour: 20,
+      waterIntervalHours: 3,
       aiMethod: 'chatgpt',
       aiModel: 'gpt-5',
       aiShareHealth: true,
@@ -69,5 +81,43 @@ describe('coercePreferences', () => {
     expect(coercePreferences({ reminderMinute: -1 }).reminderMinute).toBe(
       DEFAULT_PREFERENCES.reminderMinute
     );
+    expect(coercePreferences({ reminderWeekday: 0 }).reminderWeekday).toBe(
+      DEFAULT_PREFERENCES.reminderWeekday
+    );
+    expect(coercePreferences({ reminderWeekday: 9 }).reminderWeekday).toBe(
+      DEFAULT_PREFERENCES.reminderWeekday
+    );
+  });
+
+  it('rejects an unknown reminder repeat and keeps a known one', () => {
+    expect(
+      coercePreferences({ reminderRepeat: 'fortnightly' }).reminderRepeat
+    ).toBe(DEFAULT_PREFERENCES.reminderRepeat);
+    expect(coercePreferences({ reminderRepeat: 'weekly' }).reminderRepeat).toBe(
+      'weekly'
+    );
+  });
+
+  it('falls back on out-of-range water reminder fields', () => {
+    expect(coercePreferences({ waterStartHour: 30 }).waterStartHour).toBe(
+      DEFAULT_PREFERENCES.waterStartHour
+    );
+    expect(coercePreferences({ waterEndHour: -2 }).waterEndHour).toBe(
+      DEFAULT_PREFERENCES.waterEndHour
+    );
+    expect(coercePreferences({ waterIntervalHours: 0 }).waterIntervalHours).toBe(
+      DEFAULT_PREFERENCES.waterIntervalHours
+    );
+    expect(
+      coercePreferences({ waterIntervalHours: 99 }).waterIntervalHours
+    ).toBe(DEFAULT_PREFERENCES.waterIntervalHours);
+  });
+
+  it('falls back to a usable window when the water hours are backwards', () => {
+    // A backwards window would schedule nothing while still reading as "on",
+    // which is worse than silently using the default day-time window.
+    const coerced = coercePreferences({ waterStartHour: 22, waterEndHour: 6 });
+    expect(coerced.waterStartHour).toBe(DEFAULT_PREFERENCES.waterStartHour);
+    expect(coerced.waterEndHour).toBe(DEFAULT_PREFERENCES.waterEndHour);
   });
 });
