@@ -21,7 +21,14 @@ Offline-first weight and water tracking for Android. No account, no server, no s
   entry) and shows current and goal BMI.
 - **Home-screen widget** — your water total and one-tap quick adds, without
   opening the app.
-- **Water log** — one-tap +250 / +500 ml adds, a daily goal and a progress bar. In Health Connect mode Heft writes its own water entries and reads the ones other apps saved.
+- **Water log** — one-tap +250 / +500 ml adds, a daily goal, a progress bar, and
+  a **Today's log** list that resets at local midnight. In Health Connect mode
+  Heft writes its own water entries and reads the ones other apps saved.
+- **One Health Connect connection** — weight, height, steps, workouts, water, and
+  full history are requested in a single dialog, and Settings shows exactly what
+  is granted. The dashboard's Sync button now sits in the latest-weight card.
+- **Goal weight** — shown as a value with an **Update** button; the input only
+  appears while editing (or when no goal is set).
 - **Reminders** for weigh-ins and water. Off by default; turning one on is the only time Heft asks for the notification permission, and the alerts are scheduled on the device.
 - **Export and import** readings as CSV or JSON, through the system share sheet.
 - **Optional AI assistant**, off by default and only if you supply your own OpenAI key.
