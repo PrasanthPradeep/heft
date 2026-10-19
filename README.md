@@ -40,8 +40,9 @@ pending_water
 1. **Onboarding** (`src/app/onboarding.tsx`) — pick Health Connect or local
    storage. If Health Connect is unavailable or permission is denied, Heft offers
    local storage instead of blocking.
-2. **Dashboard** (`src/app/index.tsx`) — latest reading, the water card, the
-   recent list, a one-tap Sync now, a pull-to-refresh, and the weigh-in reminder.
+2. **Dashboard** (`src/app/index.tsx`) — latest reading with a compact **Sync**
+   button in the card, the water card (today's total and today's log), the
+   recent list, a pull-to-refresh, and the weigh-in reminder.
 3. **Add / edit** (`src/app/add-weight.tsx`, `src/features/weight/WeightEntryForm.tsx`)
    — a manual form (weight, date/time, note). The same screen handles edits.
 4. **History** (`src/app/history.tsx`) — the full list with edit and delete.
@@ -51,8 +52,9 @@ pending_water
    activity summary.
 6. **Assistant** (`src/app/assistant.tsx`) — an opt-in chat that can analyse your
    data and help you plan. Off until you connect it; see below.
-7. **Settings** (`src/app/settings.tsx`) — storage mode, units, remind time,
-   activity permissions, the assistant connection, export / import, and
+7. **Settings** (`src/app/settings.tsx`) — storage mode, one Health Connect
+   connection (with a granted/not-granted checklist), sync status, units, remind
+   time, the assistant connection, export / import, and
    delete-all.
 
 ## Storage modes
@@ -102,26 +104,29 @@ bands — under 18.5, 18.5–24.9, 25–29.9, and 30 or more — and height chan
 recalculate both values immediately. Nothing here needs an account, the cloud,
 or the assistant; it works identically in both storage modes.
 
-**Activity (Google Fit and friends).** Activity is a **separate, optional**
-permission — onboarding stays weight-only. Tapping **Connect activity data** in
-Settings requests read access to `Steps` and `ExerciseSession`. Once granted,
-each sync stores per-day steps and recent sessions in `activity_daily` /
+**Activity (Google Fit and friends).** Activity is optional and **read-only**.
+The single Health Connect connection asks for `Steps` and `ExerciseSession`
+together with weight, height, water, and full history, so there is one dialog
+instead of separate connects. The system sheet still lets you allow or deny each
+data type, and Settings shows exactly what is granted. Once granted, each sync
+stores per-day steps and recent sessions in `activity_daily` /
 `activity_sessions` and the Insights screen shows a weekly summary. Steps are
 read with Health Connect's daily aggregation (`aggregateGroupByPeriod`) rather
-than paging tens of thousands of minute-level records. Activity is **read-only**;
-Heft never writes it. Android has no live Google Fit API for new apps anymore
-(Google shut down sign-ups in 2024 and directs mobile apps to Health Connect),
-which is exactly why Heft reads Fitness data through Health Connect.
+than paging tens of thousands of minute-level records. Heft never writes
+activity. Android has no live Google Fit API for new apps anymore (Google shut
+down sign-ups in 2024 and directs mobile apps to Health Connect), which is why
+Heft reads Fitness data through Health Connect.
 
-**Water (optional, both modes).** The dashboard card totals the day against a
-goal set in Settings and offers **+250 ml** / **+500 ml** quick adds plus
-one-tap **Undo** for the latest entry. In Health Connect mode, **Connect water
-data** in Settings requests `READ_HYDRATION` / `WRITE_HYDRATION`; new entries are
-written as `HydrationRecord`s (a one-second interval, because Health Connect
+**Water (optional, both modes).** The dashboard card shows today's total against
+a goal set in Settings, offers **+250 ml** / **+500 ml** quick adds and one-tap
+**Undo** for the latest entry, and lists the day's individual entries under
+**Today's log**. The total resets at local midnight. In Health Connect mode,
+water access is part of the single Health Connect connection (Settings requests
+`READ_HYDRATION` / `WRITE_HYDRATION` alongside the other data types); new entries
+are written as `HydrationRecord`s (a one-second interval, because Health Connect
 rejects zero-length records), and hydration logged by other apps is read back
-into `water_cache`. Water is requested only when you tap that button — onboarding
-and the weight flow never ask. Without the permission, entries are kept in
-`pending_water` and upload after access is granted and a sync runs. As with
+into `water_cache`. Without the permission, entries are kept in `pending_water`
+and upload after access is granted and a sync runs. As with
 weight, only records Heft created (matched by `clientRecordId`) can be deleted
 from the app.
 
@@ -569,12 +574,13 @@ development build:
 - Export then import in local mode; duplicate readings are skipped.
 - Kill and relaunch the app: local-mode readings persist; Health Connect mode
   re-syncs on launch.
-- Tap **Connect activity data**, grant steps/exercise: Insights shows a weekly
-  activity summary; denying leaves weight tracking unaffected.
-- Water: tap **+250 ml** twice and **+500 ml** once; the card reads **1 L** and
-  the bar fills halfway against the default 2 L goal. **Undo** removes the last
-  entry. In Health Connect mode, grant **Connect water data** and confirm the
-  entries appear in Health Connect's hydration list.
+- Tap **Connect Health Connect** once, grant the data types: Settings shows each
+  one as **Granted** and Insights shows a weekly activity summary. Denying any
+  data type leaves weight tracking unaffected.
+- Water: tap **+250 ml** twice and **+500 ml** once; the card reads **1 L**, the
+  bar fills halfway against the default 2 L goal, and **Today's log** lists the
+  three entries with their times. **Undo** removes the last entry. In Health
+  Connect mode, confirm the entries appear in Health Connect's hydration list.
 - Revoke hydration access in Health Connect, log another glass: it shows as
   waiting to sync, then uploads after access is restored and **Sync now** runs.
 - Change **Water goal** in Settings and check the dashboard bar rescales.

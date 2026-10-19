@@ -12,7 +12,7 @@ import {
 
 import { Button, Card, Screen } from '@/components/ui';
 import { Colors, Radius, Spacing } from '@/constants/theme';
-import { formatDateTime, formatWeight } from '@/lib/format';
+import { formatDateTime, formatTime, formatWeight } from '@/lib/format';
 import { localDayKey } from '@/features/activity/activityCalculations';
 import { syncHealthConnect } from '@/features/health-connect/weightSync';
 import {
@@ -178,11 +178,10 @@ export default function HomeScreen() {
 
   const today = localDayKey(new Date());
   const waterSummary = summarizeWater(water);
+  const todayWater = entriesForDay(water, today);
   // Entries arrive newest-first, so the first owned one today is the last thing
   // the user added and the only sensible target for Undo.
-  const lastWaterToday = entriesForDay(water, today).find(
-    (entry) => entry.owned
-  );
+  const lastWaterToday = todayWater.find((entry) => entry.owned);
   const pendingWater = water.filter((entry) => entry.pending).length;
 
   return (
@@ -199,7 +198,28 @@ export default function HomeScreen() {
           onPress={() => router.push('/insights')}
           style={({ pressed }) => [pressed && styles.summaryPressed]}>
           <Card style={styles.summaryCard}>
-            <Text style={styles.summaryLabel}>Latest weight</Text>
+            <View style={styles.summaryHeader}>
+              <Text style={styles.summaryLabel}>Latest weight</Text>
+              {isHealthConnect ? (
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel="Sync with Health Connect"
+                  onPress={(event) => {
+                    event.stopPropagation();
+                    syncNow();
+                  }}
+                  disabled={syncing}
+                  hitSlop={8}
+                  style={({ pressed }) => [
+                    styles.summarySync,
+                    pressed && styles.summarySyncPressed,
+                  ]}>
+                  <Text style={styles.summarySyncText}>
+                    {syncing ? 'Syncing…' : '↻ Sync'}
+                  </Text>
+                </Pressable>
+              ) : null}
+            </View>
             <Text style={styles.summaryValue}>
               {latest ? formatWeight(latest.weightKg, unit) : '--.--'}
               <Text style={styles.summaryUnit}> {unit}</Text>
@@ -211,6 +231,12 @@ export default function HomeScreen() {
                   }`
                 : 'No measurements yet'}
             </Text>
+            {pendingCount > 0 ? (
+              <Text style={styles.summaryPending}>
+                {pendingCount} measurement{pendingCount === 1 ? '' : 's'}{' '}
+                waiting to sync
+              </Text>
+            ) : null}
             <View style={styles.summaryHint}>
               <Text style={styles.summaryHintText}>View insights</Text>
               <Text style={styles.summaryChevron}>›</Text>
@@ -243,7 +269,7 @@ export default function HomeScreen() {
             <View style={styles.waterHeading}>
               <Text style={styles.waterTitle}>Water</Text>
               <Text style={styles.waterMeta}>
-                Goal {formatVolume(preferences.waterTargetMl)}
+                Today · Goal {formatVolume(preferences.waterTargetMl)}
               </Text>
             </View>
             <Text style={styles.waterValue}>
@@ -309,6 +335,26 @@ export default function HomeScreen() {
             ) : null}
           </View>
 
+          <View style={styles.waterLog}>
+            <Text style={styles.waterLogTitle}>Today&apos;s log</Text>
+            {todayWater.length === 0 ? (
+              <Text style={styles.waterHint}>
+                No water logged yet today. The total resets at midnight.
+              </Text>
+            ) : (
+              todayWater.map((entry) => (
+                <View key={entry.id} style={styles.waterLogRow}>
+                  <Text style={styles.waterLogTime}>
+                    {formatTime(entry.loggedAt)}
+                  </Text>
+                  <Text style={styles.waterLogAmount}>
+                    {formatVolume(entry.volumeMl)}
+                  </Text>
+                </View>
+              ))
+            )}
+          </View>
+
           {isHealthConnect && !hydrationAccess.canWrite ? (
             <Text style={styles.waterHint}>
               {hasHydrationAccess(hydrationAccess)
@@ -324,28 +370,6 @@ export default function HomeScreen() {
             </Text>
           ) : null}
         </Card>
-
-        {isHealthConnect ? (
-          <Card style={styles.syncCard}>
-            <Text style={styles.syncTitle}>
-              {pendingCount > 0
-                ? `${pendingCount} measurement${pendingCount === 1 ? '' : 's'} waiting to sync`
-                : 'Health Connect is your weight history'}
-            </Text>
-            <Text style={styles.syncBody}>
-              {pendingCount > 0
-                ? 'Heft could not reach Health Connect. Retry when you are online or the permission is restored.'
-                : 'New readings are written to Health Connect. Pull down or tap Sync now to refresh.'}
-            </Text>
-            <Button
-              label={syncing ? 'Syncing…' : 'Sync now'}
-              variant={pendingCount > 0 ? 'primary' : 'secondary'}
-              onPress={syncNow}
-              loading={syncing}
-              disabled={syncing}
-            />
-          </Card>
-        ) : null}
 
         {error ? <Text style={styles.error}>{error}</Text> : null}
 
@@ -405,6 +429,30 @@ const styles = StyleSheet.create({
     borderColor: Colors.brand,
     padding: Spacing.four,
     gap: Spacing.one,
+  },
+  summaryHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: Spacing.two,
+  },
+  summarySync: {
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.45)',
+    borderRadius: Radius.pill,
+    paddingHorizontal: Spacing.two,
+    paddingVertical: 4,
+  },
+  summarySyncPressed: { opacity: 0.65 },
+  summarySyncText: {
+    color: Colors.surface,
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  summaryPending: {
+    color: Colors.accentOnBrand,
+    fontSize: 12,
+    fontWeight: '600',
   },
   summaryLabel: {
     color: Colors.accentOnBrand,
@@ -489,6 +537,27 @@ const styles = StyleSheet.create({
   },
   waterHint: { color: Colors.textSecondary, fontSize: 13, lineHeight: 19 },
   waterUndo: { color: Colors.brand, fontWeight: '700', fontSize: 13 },
+  waterLog: {
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: Colors.border,
+    paddingTop: Spacing.two,
+    gap: Spacing.one,
+  },
+  waterLogTitle: {
+    color: Colors.textMuted,
+    fontSize: 12,
+    fontWeight: '700',
+    letterSpacing: 0.3,
+    textTransform: 'uppercase',
+  },
+  waterLogRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: Spacing.two,
+  },
+  waterLogTime: { color: Colors.textSecondary, fontSize: 13 },
+  waterLogAmount: { color: Colors.text, fontSize: 13, fontWeight: '600' },
   reminder: {
     color: Colors.warning,
     backgroundColor: Colors.warningTint,
@@ -496,9 +565,6 @@ const styles = StyleSheet.create({
     borderRadius: Radius.sm,
     fontSize: 13,
   },
-  syncCard: { gap: Spacing.two },
-  syncTitle: { fontSize: 16, fontWeight: '700', color: Colors.text },
-  syncBody: { color: Colors.textSecondary, lineHeight: 21 },
   error: {
     color: Colors.danger,
     backgroundColor: Colors.dangerTint,

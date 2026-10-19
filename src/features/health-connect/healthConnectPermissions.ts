@@ -49,6 +49,16 @@ export const HYDRATION_PERMISSIONS: Permission[] = [
   { accessType: 'write', recordType: 'Hydration' },
 ];
 
+/**
+ * Everything Heft may read or write, requested in one dialog. Users connect
+ * once and can still allow or deny each data type in the Health Connect sheet.
+ */
+export const ALL_HEALTH_PERMISSIONS: HealthConnectPermissionRequest[] = [
+  ...WEIGHT_PERMISSIONS,
+  ...ACTIVITY_PERMISSIONS,
+  ...HYDRATION_PERMISSIONS,
+];
+
 export type HealthConnectStatus =
   | 'available'
   | 'update-required'
@@ -252,6 +262,73 @@ export async function requestHydrationPermissions(): Promise<HydrationPermission
   }
 
   return getHydrationPermissionState();
+}
+
+export type HealthAccessState = {
+  weight: WeightPermissionState;
+  activity: ActivityPermissionState;
+  hydration: HydrationPermissionState;
+  canReadHeight: boolean;
+};
+
+export const NO_HEALTH_ACCESS: HealthAccessState = {
+  weight: NO_PERMISSIONS,
+  activity: NO_ACTIVITY_PERMISSIONS,
+  hydration: NO_HYDRATION_PERMISSIONS,
+  canReadHeight: false,
+};
+
+/** One snapshot of every record permission Heft uses. */
+export async function getAllPermissionState(): Promise<HealthAccessState> {
+  if (!(await ensureHealthConnectReady())) return NO_HEALTH_ACCESS;
+
+  try {
+    const granted = await getGrantedPermissions();
+    const has = (
+      accessType: 'read' | 'write',
+      recordType: Permission['recordType']
+    ) =>
+      granted.some(
+        (permission) =>
+          permission.accessType === accessType &&
+          permission.recordType === recordType
+      );
+
+    return {
+      weight: {
+        canRead: has('read', 'Weight'),
+        canWrite: has('write', 'Weight'),
+      },
+      activity: {
+        canReadSteps: has('read', 'Steps'),
+        canReadExercise: has('read', 'ExerciseSession'),
+      },
+      hydration: {
+        canRead: has('read', 'Hydration'),
+        canWrite: has('write', 'Hydration'),
+      },
+      canReadHeight: has('read', 'Height'),
+    };
+  } catch {
+    return NO_HEALTH_ACCESS;
+  }
+}
+
+/**
+ * Requests everything in one Health Connect dialog. The full-history permission
+ * is part of the same request; the provider's granted-permissions list does not
+ * report it separately.
+ */
+export async function requestAllHealthPermissions(): Promise<HealthAccessState> {
+  if (!(await ensureHealthConnectReady())) return NO_HEALTH_ACCESS;
+
+  try {
+    await requestPermission(ALL_HEALTH_PERMISSIONS);
+  } catch {
+    // Fall through and report whatever was actually granted.
+  }
+
+  return getAllPermissionState();
 }
 
 export { openHealthConnectSettings };

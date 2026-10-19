@@ -2,6 +2,7 @@ import { useFocusEffect } from 'expo-router';
 import React, { useCallback, useState } from 'react';
 import {
   Alert,
+  Pressable,
   ScrollView,
   StyleSheet,
   Text,
@@ -67,6 +68,7 @@ export default function InsightsScreen() {
       ? formatWeight(preferences.goalWeightKg, unit)
       : ''
   );
+  const [editingGoal, setEditingGoal] = useState(false);
 
   const load = useCallback(async () => {
     const [rows, syncedAt, activityDays] = await Promise.all([
@@ -112,18 +114,39 @@ export default function InsightsScreen() {
   async function saveGoal() {
     if (goalInput.trim().length === 0) {
       await updatePreferences({ goalWeightKg: null });
+      setEditingGoal(false);
       return;
     }
 
     try {
       const goalWeightKg = parseWeightInput(goalInput, unit);
       await updatePreferences({ goalWeightKg });
+      setEditingGoal(false);
     } catch (error) {
       Alert.alert(
         'Check the goal',
         error instanceof Error ? error.message : 'Enter a valid weight.'
       );
     }
+  }
+
+  /** Reveals the input pre-filled with the current goal so it can be changed. */
+  function startGoalEdit() {
+    setGoalInput(
+      preferences.goalWeightKg !== null
+        ? formatWeight(preferences.goalWeightKg, unit)
+        : ''
+    );
+    setEditingGoal(true);
+  }
+
+  function cancelGoalEdit() {
+    setGoalInput(
+      preferences.goalWeightKg !== null
+        ? formatWeight(preferences.goalWeightKg, unit)
+        : ''
+    );
+    setEditingGoal(false);
   }
 
   /** Explicit opt-in: asks Health Connect for height access, then reads it. */
@@ -149,7 +172,9 @@ export default function InsightsScreen() {
 
   return (
     <Screen edges={['left', 'right']}>
-      <ScrollView contentContainerStyle={styles.content}>
+      <ScrollView
+        contentContainerStyle={styles.content}
+        keyboardShouldPersistTaps="handled">
         <Title>Insights</Title>
 
         <Card style={styles.card}>
@@ -183,21 +208,50 @@ export default function InsightsScreen() {
 
         <Card style={styles.card}>
           <Label>Goal weight ({unit})</Label>
-          <View style={styles.goalRow}>
-            <TextInput
-              value={goalInput}
-              onChangeText={(text) => setGoalInput(text.replace(/[^0-9.,]/g, ''))}
-              keyboardType="decimal-pad"
-              placeholder={unit === 'lb' ? '160' : '72'}
-              style={styles.goalInput}
-            />
-            <Button
-              label="Update"
-              variant="secondary"
-              onPress={saveGoal}
-              style={styles.goalButton}
-            />
-          </View>
+
+          {preferences.goalWeightKg === null || editingGoal ? (
+            <>
+              <View style={styles.goalRow}>
+                <TextInput
+                  value={goalInput}
+                  onChangeText={(text) =>
+                    setGoalInput(text.replace(/[^0-9.,]/g, ''))
+                  }
+                  keyboardType="decimal-pad"
+                  placeholder={unit === 'lb' ? '160' : '72'}
+                  style={styles.goalInput}
+                />
+                <Button
+                  label={editingGoal ? 'Save' : 'Set goal'}
+                  variant="secondary"
+                  onPress={saveGoal}
+                  style={styles.goalButton}
+                />
+              </View>
+              {editingGoal ? (
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel="Cancel editing the goal weight"
+                  onPress={cancelGoalEdit}
+                  style={styles.goalCancel}>
+                  <Text style={styles.goalCancelText}>Cancel</Text>
+                </Pressable>
+              ) : null}
+            </>
+          ) : (
+            <View style={styles.goalSummary}>
+              <Text style={styles.goalValue}>
+                {formatWeight(preferences.goalWeightKg, unit)}{' '}
+                <Text style={styles.goalValueUnit}>{unit}</Text>
+              </Text>
+              <Button
+                label="Update"
+                variant="secondary"
+                onPress={startGoalEdit}
+                style={styles.goalButton}
+              />
+            </View>
+          )}
 
           {goal ? (
             <View style={styles.goalProgress}>
@@ -302,6 +356,16 @@ const styles = StyleSheet.create({
     fontSize: 18,
   },
   goalButton: { paddingHorizontal: Spacing.four },
+  goalSummary: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: Spacing.two,
+  },
+  goalValue: { fontSize: 22, fontWeight: '800', color: Colors.text },
+  goalValueUnit: { fontSize: 15, fontWeight: '600', color: Colors.textSecondary },
+  goalCancel: { alignSelf: 'flex-start', paddingVertical: Spacing.one },
+  goalCancelText: { color: Colors.brand, fontWeight: '600', fontSize: 14 },
   goalProgress: { gap: Spacing.two, marginTop: Spacing.two },
   goalText: { fontWeight: '700', color: Colors.text, fontSize: 16 },
   progressTrack: {

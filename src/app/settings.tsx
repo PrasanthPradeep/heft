@@ -23,8 +23,6 @@ import { Colors, Radius, Spacing } from '@/constants/theme';
 import { clearAllData } from '@/db/database';
 import { formatDateTime } from '@/lib/format';
 import { AiSettingsCard } from '@/features/ai/AiSettingsCard';
-import { loadDailyActivity } from '@/features/activity/activityRepository';
-import { summarizeActivity } from '@/features/activity/activityCalculations';
 import {
   detectFormat,
   entriesToCsv,
@@ -33,18 +31,14 @@ import {
 } from '@/features/export/exportService';
 import { syncHealthConnect } from '@/features/health-connect/weightSync';
 import {
-  NO_HYDRATION_PERMISSIONS,
-  getActivityPermissionState,
+  NO_HEALTH_ACCESS,
+  getAllPermissionState,
   getHealthConnectStatus,
-  getHydrationPermissionState,
   hasActivityAccess,
   hasHydrationAccess,
   openHealthConnectSettings,
-  requestActivityPermissions,
-  requestHydrationPermissions,
-  requestWeightPermissions,
-  type ActivityPermissionState,
-  type HydrationPermissionState,
+  requestAllHealthPermissions,
+  type HealthAccessState,
 } from '@/features/health-connect/healthConnectPermissions';
 import {
   getReminderPermission,
@@ -84,6 +78,22 @@ type PickerTarget = 'weighIn' | 'waterStart' | 'waterEnd';
 
 const REPOSITORY_URL = 'https://github.com/PrasanthPradeep/heft';
 
+/** One requested Health Connect permission, stated in words and not by colour. */
+function AccessRow({ label, granted }: { label: string; granted: boolean }) {
+  return (
+    <View style={styles.accessRow}>
+      <Text style={styles.accessLabel}>{label}</Text>
+      <Text
+        style={[
+          styles.accessStatus,
+          granted ? styles.accessGranted : styles.accessMissing,
+        ]}>
+        {granted ? 'Granted' : 'Not granted'}
+      </Text>
+    </View>
+  );
+}
+
 export default function SettingsScreen() {
   const { preferences, updatePreferences } = usePreferences();
   const repository = getWeightRepository(preferences.storageMode);
@@ -98,32 +108,22 @@ export default function SettingsScreen() {
   const [activePicker, setActivePicker] = useState<PickerTarget | null>(null);
   const [reminderPermission, setReminderPermission] =
     useState<ReminderPermission>('undetermined');
-  const [activityAccess, setActivityAccess] = useState<ActivityPermissionState>({
-    canReadSteps: false,
-    canReadExercise: false,
-  });
-  const [activitySteps7d, setActivitySteps7d] = useState<number | null>(null);
-  const [hydrationAccess, setHydrationAccess] =
-    useState<HydrationPermissionState>(NO_HYDRATION_PERMISSIONS);
+  const [healthAccess, setHealthAccess] =
+    useState<HealthAccessState>(NO_HEALTH_ACCESS);
 
   const load = useCallback(async () => {
-    const [rows, syncedAt, access, activityDays, permission, hydration] =
-      await Promise.all([
-        repository.listWeights(),
-        loadLastSyncedAt(),
-        getActivityPermissionState(),
-        loadDailyActivity(),
-        // Re-read on every focus, since it can change in system settings while
-        // Heft sits in the background.
-        getReminderPermission(),
-        getHydrationPermissionState(),
-      ]);
+    const [rows, syncedAt, access, permission] = await Promise.all([
+      repository.listWeights(),
+      loadLastSyncedAt(),
+      getAllPermissionState(),
+      // Re-read on every focus, since it can change in system settings while
+      // Heft sits in the background.
+      getReminderPermission(),
+    ]);
     setEntries(rows);
     setLastSyncedAt(syncedAt);
-    setActivityAccess(access);
-    setActivitySteps7d(summarizeActivity(activityDays).averageSteps7d);
+    setHealthAccess(access);
     setReminderPermission(permission);
-    setHydrationAccess(hydration);
   }, [repository]);
 
   useFocusEffect(
@@ -150,8 +150,8 @@ export default function SettingsScreen() {
         return;
       }
 
-      const permissions = await requestWeightPermissions();
-      if (!permissions.canRead && !permissions.canWrite) {
+      const permissions = await requestAllHealthPermissions();
+      if (!permissions.weight.canRead && !permissions.weight.canWrite) {
         Alert.alert(
           'Permission needed',
           'Heft needs permission to read and write weight in Health Connect.'
@@ -164,7 +164,7 @@ export default function SettingsScreen() {
       await load();
       Alert.alert(
         'Health Connect enabled',
-        'Heft will read and write your weight in Health Connect.'
+        'Heft will read and write your weight and water, and read your height, steps, workouts, and full history.'
       );
     } finally {
       setBusy(false);
@@ -229,34 +229,15 @@ export default function SettingsScreen() {
     }
   }
 
-  async function connectActivity() {
+  async function connectAllAccess() {
     setBusy(true);
     try {
-      const access = await requestActivityPermissions();
-      setActivityAccess(access);
-      if (!hasActivityAccess(access)) {
+      const access = await requestAllHealthPermissions();
+      setHealthAccess(access);
+      if (!access.weight.canRead && !access.weight.canWrite) {
         Alert.alert(
-          'No activity data',
-          'Heft needs read access to steps and exercise to show Google Fit data. You can grant it in Health Connect.'
-        );
-        return;
-      }
-      await syncHealthConnect();
-      await load();
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function connectHydration() {
-    setBusy(true);
-    try {
-      const access = await requestHydrationPermissions();
-      setHydrationAccess(access);
-      if (!hasHydrationAccess(access)) {
-        Alert.alert(
-          'No water access',
-          'Heft needs access to hydration in Health Connect to sync water. You can grant it in Health Connect.'
+          'Permission needed',
+          'Heft needs permission to read and write weight in Health Connect.'
         );
         return;
       }
@@ -460,9 +441,22 @@ export default function SettingsScreen() {
     </Card>
   ) : null;
 
+  const weightGranted =
+    healthAccess.weight.canRead && healthAccess.weight.canWrite;
+  const activityGranted = hasActivityAccess(healthAccess.activity);
+  const hydrationGranted =
+    hasHydrationAccess(healthAccess.hydration) && healthAccess.hydration.canWrite;
+  const allGranted =
+    weightGranted &&
+    healthAccess.canReadHeight &&
+    activityGranted &&
+    hydrationGranted;
+
   return (
     <Screen edges={['left', 'right']}>
-      <ScrollView contentContainerStyle={styles.content}>
+      <ScrollView
+        contentContainerStyle={styles.content}
+        keyboardShouldPersistTaps="handled">
         <Title>Settings</Title>
 
         <Label>Storage</Label>
@@ -510,6 +504,10 @@ export default function SettingsScreen() {
                   : 'Everything is synced.'}
               </Text>
               <Text style={styles.cardText}>
+                New readings are written to Health Connect. Tap Sync now to
+                refresh.
+              </Text>
+              <Text style={styles.cardText}>
                 {lastSyncedAt
                   ? `Last synced ${formatDateTime(lastSyncedAt)}`
                   : 'Not synced yet.'}
@@ -522,56 +520,45 @@ export default function SettingsScreen() {
               />
             </Card>
 
-            <Label>Activity</Label>
+            <Label>Health Connect access</Label>
             <Card style={styles.stack}>
               <Text style={styles.cardText}>
-                {hasActivityAccess(activityAccess)
-                  ? activitySteps7d !== null
-                    ? `Averaging ${Math.round(activitySteps7d).toLocaleString()} steps a day over the last week.`
-                    : 'Reading steps and workouts from Health Connect.'
-                  : 'Read steps and workouts that Google Fit and other fitness apps sync to Health Connect.'}
+                Heft reads your weight, height, steps, workouts, water, and your
+                full weight history. It writes only the weight and water you add.
               </Text>
-              {hasActivityAccess(activityAccess) ? (
-                <Button
-                  label="Refresh activity"
-                  variant="secondary"
-                  onPress={runSync}
-                  disabled={busy}
-                />
-              ) : (
-                <Button
-                  label={busy ? 'Please wait…' : 'Connect activity data'}
-                  onPress={connectActivity}
-                  loading={busy}
-                  disabled={busy}
-                />
-              )}
-            </Card>
 
-            <Label>Water in Health Connect</Label>
-            <Card style={styles.stack}>
-              <Text style={styles.cardText}>
-                {hasHydrationAccess(hydrationAccess)
-                  ? hydrationAccess.canWrite
-                    ? 'Water logged in Heft is written to Health Connect, and water logged by other apps is read back.'
-                    : 'Reading water from Health Connect. Writing is not allowed, so new entries stay on this device.'
-                  : 'Connect hydration to sync water with Health Connect. Until then, water stays on this device.'}
-              </Text>
-              {hasHydrationAccess(hydrationAccess) ? (
-                <Button
-                  label="Refresh water"
-                  variant="secondary"
-                  onPress={runSync}
-                  disabled={busy}
+              <View style={styles.accessList}>
+                <AccessRow label="Weight (read & write)" granted={weightGranted} />
+                <AccessRow
+                  label="Height (read)"
+                  granted={healthAccess.canReadHeight}
                 />
+                <AccessRow
+                  label="Steps & workouts (read)"
+                  granted={activityGranted}
+                />
+                <AccessRow
+                  label="Water (read & write)"
+                  granted={hydrationGranted}
+                />
+              </View>
+
+              {allGranted ? (
+                <Text style={styles.accessOk}>All access granted.</Text>
               ) : (
                 <Button
-                  label={busy ? 'Please wait…' : 'Connect water data'}
-                  onPress={connectHydration}
+                  label={busy ? 'Please wait…' : 'Connect Health Connect'}
+                  onPress={connectAllAccess}
                   loading={busy}
                   disabled={busy}
                 />
               )}
+              <Button
+                label="Manage in Health Connect"
+                variant="secondary"
+                onPress={openHealthConnectSettings}
+                disabled={busy}
+              />
             </Card>
           </>
         ) : null}
@@ -900,18 +887,31 @@ const styles = StyleSheet.create({
   },
   weekRow: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
+    flexWrap: 'nowrap',
     gap: Spacing.one,
   },
   dayChip: {
+    flex: 1,
+    alignItems: 'center',
     paddingVertical: Spacing.two,
-    paddingHorizontal: Spacing.three,
     borderWidth: 1.5,
     borderColor: Colors.border,
     borderRadius: Radius.pill,
     backgroundColor: Colors.surface,
   },
   dayChipText: { fontSize: 13, fontWeight: '600', color: Colors.text },
+  accessList: { gap: Spacing.one },
+  accessRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: Spacing.two,
+  },
+  accessLabel: { color: Colors.text, fontSize: 14, flexShrink: 1 },
+  accessStatus: { fontSize: 13, fontWeight: '700' },
+  accessGranted: { color: Colors.brand },
+  accessMissing: { color: Colors.textMuted },
+  accessOk: { color: Colors.brand, fontSize: 14, fontWeight: '600' },
   warningText: { color: Colors.warning, lineHeight: 21 },
   timeButton: {
     borderWidth: 1,

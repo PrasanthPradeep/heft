@@ -8,7 +8,7 @@ import { usePreferences } from '@/features/settings/preferences';
 import type { StorageMode } from '@/features/settings/types';
 import {
   getHealthConnectStatus,
-  requestWeightPermissions,
+  requestAllHealthPermissions,
   type HealthConnectStatus,
 } from '@/features/health-connect/healthConnectPermissions';
 
@@ -45,8 +45,8 @@ export default function OnboardingScreen() {
         return;
       }
 
-      const permissions = await requestWeightPermissions();
-      if (!permissions.canRead && !permissions.canWrite) {
+      const permissions = await requestAllHealthPermissions();
+      if (!permissions.weight.canRead && !permissions.weight.canWrite) {
         setError(
           'Health Connect permission was not granted. You can try again, or keep your history on this device only.'
         );
@@ -84,12 +84,13 @@ export default function OnboardingScreen() {
         <Card style={styles.card}>
           <Text style={styles.cardTitle}>Use Health Connect</Text>
           <Text style={styles.cardBody}>
-            Read the weight records you already have in Health Connect and save new
-            readings there, so other health apps stay in sync. Heft keeps only
-            settings and a small cache on this device.
+            Connect once to read your weight, height, steps, workouts, water, and
+            full weight history, and to save the weight and water you add. You can
+            allow or deny each data type in the Health Connect sheet. Heft keeps
+            only settings and a small cache on this device.
           </Text>
           <Button
-            label={busy ? 'Please wait…' : 'Use Health Connect'}
+            label={busy ? 'Please wait…' : 'Connect Health Connect'}
             onPress={chooseHealthConnect}
             disabled={busy || statusLoading || !healthConnectAvailable}
             loading={busy && healthConnectAvailable}

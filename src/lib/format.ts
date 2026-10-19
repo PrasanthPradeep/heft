@@ -48,6 +48,17 @@ export function formatDateTime(iso: string): string {
   return `${day} ${month} ${year}, ${hours}:${minutes}`;
 }
 
+/** Local clock time, e.g. `09:05`. */
+export function formatTime(iso: string): string {
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) {
+    return iso;
+  }
+  const hours = String(date.getHours()).padStart(2, '0');
+  const minutes = String(date.getMinutes()).padStart(2, '0');
+  return `${hours}:${minutes}`;
+}
+
 /** Short local date, e.g. `5 Mar`. */
 export function formatShortDate(iso: string): string {
   const date = new Date(iso);

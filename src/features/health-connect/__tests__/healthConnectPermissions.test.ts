@@ -63,6 +63,17 @@ const ACTIVITY_PERMISSIONS = [
   { accessType: 'read', recordType: 'ExerciseSession' },
 ];
 
+const HYDRATION_PERMISSIONS = [
+  { accessType: 'read', recordType: 'Hydration' },
+  { accessType: 'write', recordType: 'Hydration' },
+];
+
+const ALL_PERMISSIONS = [
+  ...WEIGHT_PERMISSIONS,
+  ...ACTIVITY_PERMISSIONS,
+  ...HYDRATION_PERMISSIONS,
+];
+
 function grantWeight() {
   return [
     { accessType: 'read', recordType: 'Weight' },
@@ -158,5 +169,46 @@ describe('Health Connect client initialisation', () => {
     expect(connect.initialize).toHaveBeenCalledTimes(2);
     expect(first).toEqual(permissions.NO_PERMISSIONS);
     expect(second).toEqual({ canRead: true, canWrite: true });
+  });
+
+  it('requests every data type in a single dialog', async () => {
+    const { permissions, connect } = load();
+    connect.initialize.mockResolvedValue(true);
+    connect.requestPermission.mockResolvedValue([]);
+    connect.getGrantedPermissions.mockResolvedValue([
+      ...grantWeight(),
+      { accessType: 'read', recordType: 'Height' },
+      ...grantActivity(),
+      ...HYDRATION_PERMISSIONS,
+    ]);
+
+    const result = await permissions.requestAllHealthPermissions();
+
+    expect(connect.requestPermission).toHaveBeenCalledTimes(1);
+    expect(connect.requestPermission).toHaveBeenCalledWith(ALL_PERMISSIONS);
+    expect(result).toEqual({
+      weight: { canRead: true, canWrite: true },
+      activity: { canReadSteps: true, canReadExercise: true },
+      hydration: { canRead: true, canWrite: true },
+      canReadHeight: true,
+    });
+  });
+
+  it('snapshots only the permissions that were actually granted', async () => {
+    const { permissions, connect } = load();
+    connect.initialize.mockResolvedValue(true);
+    connect.getGrantedPermissions.mockResolvedValue([
+      { accessType: 'read', recordType: 'Weight' },
+      { accessType: 'read', recordType: 'Steps' },
+    ]);
+
+    const result = await permissions.getAllPermissionState();
+
+    expect(result).toEqual({
+      weight: { canRead: true, canWrite: false },
+      activity: { canReadSteps: true, canReadExercise: false },
+      hydration: { canRead: false, canWrite: false },
+      canReadHeight: false,
+    });
   });
 });
