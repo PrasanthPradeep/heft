@@ -341,6 +341,16 @@ into `stable`, tagging `vX.Y.Z`, then asking the APK build and the update publis
 to run. It refuses to start if the tag already exists, so a repeat run cannot
 half-release.
 
+Two numbers move here and they mean different things. `expo.version` is the name
+people see; `versionCode` is the integer Android compares. EAS keeps the latter
+on its own servers (`appVersionSource: "remote"`) and, because `preview` sets
+`autoIncrement`, raises it by one before each build — so each APK is
+unambiguously newer, a store would accept the sequence, and
+`dumpsys package com.heft.app | grep versionCode` can identify which build a
+phone is running. Under the `appVersion` policy `expo.version` is *also* the
+`runtimeVersion`, which is why raising it is exactly what ends the previous
+version's OTA chain.
+
 By hand, it is the same three steps:
 
 ```bash
