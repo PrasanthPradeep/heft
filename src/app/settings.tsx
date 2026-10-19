@@ -74,6 +74,7 @@ import {
   formatVolume,
 } from '@/features/water/waterCalculations';
 import { getWaterRepository } from '@/features/water/waterRepository';
+import { refreshHydrationWidget } from '@/features/widget/HeftWidget';
 
 const UNITS: WeightUnit[] = ['kg', 'lb'];
 const REPEATS: ReminderRepeat[] = ['daily', 'weekly'];
@@ -350,6 +351,7 @@ export default function SettingsScreen() {
                 await clearAllData();
               }
               await load();
+              refreshHydrationWidget();
             } catch {
               Alert.alert(
                 'Could not delete',

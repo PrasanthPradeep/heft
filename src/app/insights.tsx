@@ -13,6 +13,9 @@ import { Button, Card, Label, Screen, Title } from '@/components/ui';
 import { Colors, Radius, Spacing } from '@/constants/theme';
 import { formatDateTime, formatSigned, formatWeight } from '@/lib/format';
 import { WeightChart } from '@/features/analytics/WeightChart';
+import { BmiProgressCard } from '@/features/analytics/BmiProgressCard';
+import { readLatestHealthConnectHeight } from '@/features/health-connect/healthConnectAdapter';
+import { requestWeightPermissions } from '@/features/health-connect/healthConnectPermissions';
 import { loadDailyActivity } from '@/features/activity/activityRepository';
 import {
   summarizeActivity,
@@ -21,6 +24,7 @@ import {
 import type { DailyActivity } from '@/features/activity/types';
 import {
   computeGoalProgress,
+  latestEntry,
   nextMilestone,
   reachedMilestones,
   rollingAverage,
@@ -55,6 +59,9 @@ export default function InsightsScreen() {
   const [activitySummary, setActivitySummary] = useState<ActivitySummary | null>(
     null
   );
+  const [healthConnectHeightCm, setHealthConnectHeightCm] = useState<
+    number | null
+  >(null);
   const [goalInput, setGoalInput] = useState(
     preferences.goalWeightKg
       ? formatWeight(preferences.goalWeightKg, unit)
@@ -77,7 +84,20 @@ export default function InsightsScreen() {
       load().catch(() => {
         // The screen still renders with whatever it has.
       });
-    }, [load])
+
+      // A manual height always wins. Otherwise prefer the latest record from
+      // Health Connect so BMI works without typing it again.
+      if (
+        preferences.storageMode === 'health-connect' &&
+        preferences.heightCm === null
+      ) {
+        readLatestHealthConnectHeight()
+          .then(setHealthConnectHeightCm)
+          .catch(() => setHealthConnectHeightCm(null));
+      } else {
+        setHealthConnectHeightCm(null);
+      }
+    }, [load, preferences.heightCm, preferences.storageMode])
   );
 
   const averages = rollingAverage(entries, 7);
@@ -85,6 +105,7 @@ export default function InsightsScreen() {
   const weekly = changeInUnit(weeklyChange(entries), unit);
   const monthly = changeInUnit(monthlyChange(entries), unit);
   const goal = computeGoalProgress(entries, preferences.goalWeightKg);
+  const latest = latestEntry(entries);
   const reached = goal ? reachedMilestones(goal.progress) : [];
   const next = goal ? nextMilestone(goal.progress) : null;
 
@@ -101,6 +122,27 @@ export default function InsightsScreen() {
       Alert.alert(
         'Check the goal',
         error instanceof Error ? error.message : 'Enter a valid weight.'
+      );
+    }
+  }
+
+  /** Explicit opt-in: asks Health Connect for height access, then reads it. */
+  async function useHealthConnectHeight() {
+    try {
+      await requestWeightPermissions();
+      const height = await readLatestHealthConnectHeight();
+      if (height === null) {
+        Alert.alert(
+          'No height in Health Connect',
+          'Add your height to Health Connect, or enter it above.'
+        );
+        return;
+      }
+      setHealthConnectHeightCm(height);
+    } catch {
+      Alert.alert(
+        'Health Connect unavailable',
+        'Could not read your height. You can enter it above instead.'
       );
     }
   }
@@ -198,6 +240,20 @@ export default function InsightsScreen() {
           )}
         </Card>
 
+        <BmiProgressCard
+          currentWeightKg={latest?.weightKg ?? null}
+          goalWeightKg={preferences.goalWeightKg}
+          heightCm={preferences.heightCm}
+          healthConnectHeightCm={healthConnectHeightCm}
+          healthConnectAvailable={preferences.storageMode === 'health-connect'}
+          weightUnit={unit}
+          onSaveHeight={async (heightCm) => {
+            await updatePreferences({ heightCm });
+            setHealthConnectHeightCm(null);
+          }}
+          onUseHealthConnectHeight={useHealthConnectHeight}
+        />
+
         {preferences.storageMode === 'health-connect' ? (
           <Card style={styles.card}>
             <Label>Health Connect</Label>
@@ -207,7 +263,7 @@ export default function InsightsScreen() {
                 : 'Not synced yet.'}
             </Text>
             <Text style={styles.hint}>
-              Heft reads the last 30 days of weight from Health Connect.
+              Heft reads all available weight history from Health Connect.
             </Text>
             {activitySummary ? (
               <Text style={styles.hint}>

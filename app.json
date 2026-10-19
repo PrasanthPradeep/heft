@@ -30,6 +30,8 @@
       "permissions": [
         "android.permission.health.READ_WEIGHT",
         "android.permission.health.WRITE_WEIGHT",
+        "android.permission.health.READ_HEIGHT",
+        "android.permission.health.READ_HEALTH_DATA_HISTORY",
         "android.permission.health.READ_STEPS",
         "android.permission.health.READ_EXERCISE",
         "android.permission.health.READ_HYDRATION",

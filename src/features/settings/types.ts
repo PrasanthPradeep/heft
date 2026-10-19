@@ -13,6 +13,8 @@ export type AppPreferences = {
   weightUnit: WeightUnit;
   /** Optional goal weight, always stored in kilograms. */
   goalWeightKg: number | null;
+  /** Height in centimetres, used only for BMI. Null until the user enters it. */
+  heightCm: number | null;
   /** Weigh-in reminder. Off by default, and so is the notification permission. */
   reminderEnabled: boolean;
   reminderRepeat: ReminderRepeat;
@@ -40,6 +42,7 @@ export const DEFAULT_PREFERENCES: AppPreferences = {
   onboardingCompleted: false,
   weightUnit: 'kg',
   goalWeightKg: null,
+  heightCm: null,
   reminderEnabled: false,
   reminderRepeat: 'daily',
   // Monday: a week is easier to plan at its start than in its middle.
@@ -99,6 +102,16 @@ export function coercePreferences(input: unknown): AppPreferences {
       ? raw.goalWeightKg
       : null;
 
+  // Adult heights outside this range are almost always a typo. Keep one
+  // decimal, matching what the height input accepts.
+  const heightCm =
+    typeof raw.heightCm === 'number' &&
+    Number.isFinite(raw.heightCm) &&
+    raw.heightCm >= 100 &&
+    raw.heightCm <= 250
+      ? Math.round(raw.heightCm * 10) / 10
+      : null;
+
   const aiMethod = AI_METHODS.includes(raw.aiMethod as AiMethod)
     ? (raw.aiMethod as AiMethod)
     : DEFAULT_PREFERENCES.aiMethod;
@@ -138,6 +151,7 @@ export function coercePreferences(input: unknown): AppPreferences {
     onboardingCompleted: raw.onboardingCompleted === true,
     weightUnit,
     goalWeightKg,
+    heightCm,
     reminderEnabled: raw.reminderEnabled === true,
     reminderRepeat,
     reminderWeekday: clampInt(

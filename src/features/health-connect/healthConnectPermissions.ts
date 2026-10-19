@@ -9,10 +9,24 @@ import {
   type Permission,
 } from 'react-native-health-connect';
 
-/** Only the access Heft actually uses: read + write body weight. */
-export const WEIGHT_PERMISSIONS: Permission[] = [
+/** Only the access Heft actually uses: weight, height, and full history. */
+type ReadHealthDataHistoryPermission = {
+  accessType: 'read';
+  recordType: 'ReadHealthDataHistory';
+};
+
+type HealthConnectPermissionRequest =
+  | Permission
+  | ReadHealthDataHistoryPermission;
+
+export const WEIGHT_PERMISSIONS: HealthConnectPermissionRequest[] = [
   { accessType: 'read', recordType: 'Weight' },
   { accessType: 'write', recordType: 'Weight' },
+  // Height feeds BMI. It is requested alongside weight so the BMI section can
+  // fill itself in without a separate permission dialog.
+  { accessType: 'read', recordType: 'Height' },
+  // Without this, Health Connect only exposes roughly the last 30 days.
+  { accessType: 'read', recordType: 'ReadHealthDataHistory' },
 ];
 
 /**

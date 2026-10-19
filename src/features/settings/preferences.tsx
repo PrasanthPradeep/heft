@@ -8,6 +8,8 @@ import React, {
   useState,
 } from 'react';
 
+import { refreshHydrationWidget } from '@/features/widget/HeftWidget';
+
 import { loadPreferences, persistPreferences } from './preferenceStore';
 import { DEFAULT_PREFERENCES, type AppPreferences } from './types';
 
@@ -58,6 +60,12 @@ export function PreferencesProvider({
       preferencesRef.current = next;
       setPreferences(next);
       await persistPreferences(next);
+
+      // The widget renders the goal and reads the storage mode, so repaint it
+      // whenever either one changes (including onboarding and mode switches).
+      if (patch.waterTargetMl !== undefined || patch.storageMode !== undefined) {
+        refreshHydrationWidget();
+      }
     },
     []
   );

@@ -19,7 +19,15 @@ export function getDatabase(): Promise<SQLite.SQLiteDatabase> {
 
 async function initializeDatabase(): Promise<SQLite.SQLiteDatabase> {
   const db = await SQLite.openDatabaseAsync(DATABASE_NAME);
-  await db.execAsync('PRAGMA journal_mode = WAL;');
+  // The home-screen widget opens this file with Android's framework SQLite,
+  // while expo-sqlite uses its own bundled SQLite. WAL's shared-memory index is
+  // not shared between the two libraries: a widget checkpoint can discard
+  // frames expo-sqlite committed (preferences then revert on the next launch).
+  // The rollback journal has no shared-memory index, so both libraries read the
+  // same committed data. The busy timeout lets the widget's short reads finish
+  // instead of failing a write.
+  await db.execAsync('PRAGMA busy_timeout = 5000;');
+  await db.execAsync('PRAGMA journal_mode = DELETE;');
   await runMigrations(db);
   return db;
 }

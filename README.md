@@ -46,8 +46,9 @@ pending_water
    — a manual form (weight, date/time, note). The same screen handles edits.
 4. **History** (`src/app/history.tsx`) — the full list with edit and delete.
 5. **Insights** (`src/app/insights.tsx`) — chart, 7-day average, weekly and
-   30-day change, goal weight and milestone progress, plus (in Health Connect
-   mode) a weekly activity summary.
+   30-day change, goal weight and milestone progress, a BMI section (current and
+   goal BMI on the adult category scale), plus (in Health Connect mode) a weekly
+   activity summary.
 6. **Assistant** (`src/app/assistant.tsx`) — an opt-in chat that can analyse your
    data and help you plan. Off until you connect it; see below.
 7. **Settings** (`src/app/settings.tsx`) — storage mode, units, remind time,
@@ -88,10 +89,18 @@ fails the edit is queued instead of lost.
 left untouched.
 
 **Read window.** Health Connect only exposes roughly the last **30 days** to an
-app that has not declared the historical-read permission. Heft deliberately
-requests only `READ_WEIGHT` / `WRITE_WEIGHT` and syncs a 30-day window; reading
-further back would require the `READ_HEALTH_DATA_HISTORY` permission and a Play
-Store declaration.
+app that has not been granted the historical-read permission, so Heft requests
+`READ_HEIGHT` and `READ_HEALTH_DATA_HISTORY` alongside `READ_WEIGHT` /
+`WRITE_WEIGHT`. Once granted, each sync mirrors the **full accessible weight
+history** into the local cache; without it Health Connect simply returns the last
+30 days. Height is read from Health Connect to fill in the BMI section, with a
+manual height entered on the BMI card as a fallback.
+
+**BMI.** The Insights BMI section uses the latest reading, your goal weight, and
+your height (manual or from Health Connect). Categories follow the adult BMI
+bands — under 18.5, 18.5–24.9, 25–29.9, and 30 or more — and height changes
+recalculate both values immediately. Nothing here needs an account, the cloud,
+or the assistant; it works identically in both storage modes.
 
 **Activity (Google Fit and friends).** Activity is a **separate, optional**
 permission — onboarding stays weight-only. Tapping **Connect activity data** in

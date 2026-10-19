@@ -1,0 +1,20 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+  <application>
+    <!--
+      Home-screen hydration widget. It lives in this library module so the
+      component, its layouts and its Health Connect code are all picked up by
+      expo prebuild and autolinking without patching generated Android files.
+    -->
+    <receiver
+      android:name="com.heft.widget.HeftWidgetProvider"
+      android:exported="false"
+      android:label="@string/heft_widget_label">
+      <intent-filter>
+        <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+      </intent-filter>
+      <meta-data
+        android:name="android.appwidget.provider"
+        android:resource="@xml/heft_widget_info" />
+    </receiver>
+  </application>
+</manifest>

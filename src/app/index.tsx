@@ -35,6 +35,7 @@ import { getWaterRepository } from '@/features/water/waterRepository';
 import type { WaterEntry } from '@/features/water/types';
 import type { WeightEntry } from '@/features/weight/types';
 import { getWeightRepository } from '@/features/weight/weightRepository';
+import { refreshHydrationWidget } from '@/features/widget/HeftWidget';
 
 const RECENT_LIMIT = 5;
 
@@ -143,6 +144,7 @@ export default function HomeScreen() {
     try {
       await waterRepository.addWater({ volumeMl });
       await load();
+      refreshHydrationWidget();
     } catch (error) {
       Alert.alert(
         'Could not save',
@@ -158,6 +160,7 @@ export default function HomeScreen() {
     try {
       await waterRepository.deleteWater(id);
       await load();
+      refreshHydrationWidget();
     } catch (error) {
       Alert.alert(
         'Could not remove',

@@ -1,0 +1,25 @@
+<resources>
+  <string name="heft_widget_label">Heft Hydration</string>
+  <string name="heft_widget_description">Today\'s water, daily goal and quick add.</string>
+  <string name="heft_widget_title">Hydration</string>
+  <string name="heft_widget_title_large">Heft Hydration</string>
+  <string name="heft_widget_subtitle">Today\'s water intake</string>
+  <string name="heft_widget_add_150">+150 ml</string>
+  <string name="heft_widget_add_250">+250 ml</string>
+  <string name="heft_widget_add_500">+500 ml</string>
+  <string name="heft_widget_goal_today">of %1$s today</string>
+  <string name="heft_widget_goal_slash">/ %1$s</string>
+  <string name="heft_widget_goal_of">of %1$s</string>
+  <string name="heft_widget_percent_completed">%1$s completed</string>
+  <string name="heft_widget_remaining">%1$s left</string>
+  <string name="heft_widget_goal_reached">Goal reached</string>
+  <string name="heft_widget_status_waiting">%1$d waiting</string>
+  <string name="heft_widget_status_connect">Connect water</string>
+  <string name="heft_widget_status_read_only">Not syncing</string>
+  <string name="heft_widget_status_unavailable">Unavailable</string>
+  <string name="heft_widget_status_error">Couldn\'t read</string>
+  <string name="heft_widget_status_setup">Open Heft</string>
+  <string name="heft_widget_add_description">Add %1$d millilitres</string>
+  <string name="heft_widget_open_description">Open Heft</string>
+  <string name="heft_widget_accessibility">Open Heft. Today %1$s of %2$s.</string>
+</resources>

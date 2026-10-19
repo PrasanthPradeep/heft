@@ -54,6 +54,8 @@ function load(): { permissions: PermissionsModule; connect: HealthConnectMock } 
 const WEIGHT_PERMISSIONS = [
   { accessType: 'read', recordType: 'Weight' },
   { accessType: 'write', recordType: 'Weight' },
+  { accessType: 'read', recordType: 'Height' },
+  { accessType: 'read', recordType: 'ReadHealthDataHistory' },
 ];
 
 const ACTIVITY_PERMISSIONS = [

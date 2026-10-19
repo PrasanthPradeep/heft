@@ -1,0 +1,65 @@
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+  android:id="@+id/heft_widget_root"
+  android:layout_width="match_parent"
+  android:layout_height="match_parent"
+  android:background="@drawable/heft_widget_bg"
+  android:gravity="center_vertical"
+  android:orientation="horizontal"
+  android:padding="8dp">
+
+  <ImageView
+    android:layout_width="30dp"
+    android:layout_height="30dp"
+    android:background="@drawable/heft_widget_icon_bg"
+    android:contentDescription="@null"
+    android:padding="6dp"
+    android:src="@drawable/heft_widget_drop" />
+
+  <LinearLayout
+    android:layout_width="0dp"
+    android:layout_height="wrap_content"
+    android:layout_marginStart="10dp"
+    android:layout_marginEnd="8dp"
+    android:layout_weight="1"
+    android:orientation="vertical">
+
+    <TextView
+      android:id="@+id/heft_widget_total"
+      android:layout_width="match_parent"
+      android:layout_height="wrap_content"
+      android:ellipsize="end"
+      android:includeFontPadding="false"
+      android:maxLines="1"
+      android:text="750 ml"
+      android:textColor="#FFFFFF"
+      android:textSize="16sp"
+      android:textStyle="bold" />
+
+    <TextView
+      android:id="@+id/heft_widget_goal"
+      android:layout_width="match_parent"
+      android:layout_height="wrap_content"
+      android:layout_marginTop="1dp"
+      android:ellipsize="end"
+      android:includeFontPadding="false"
+      android:maxLines="1"
+      android:text="of 2,000 ml today"
+      android:textColor="#9FB8AA"
+      android:textSize="9sp" />
+  </LinearLayout>
+
+  <TextView
+    android:id="@+id/heft_widget_plus"
+    android:layout_width="30dp"
+    android:layout_height="30dp"
+    android:background="@drawable/heft_widget_plus_bg"
+    android:contentDescription="@string/heft_widget_add_250"
+    android:gravity="center"
+    android:includeFontPadding="false"
+    android:maxLines="1"
+    android:text="+"
+    android:textColor="#08251A"
+    android:textSize="20sp"
+    android:textStyle="bold" />
+
+</LinearLayout>

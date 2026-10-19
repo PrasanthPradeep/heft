@@ -15,6 +15,7 @@ describe('coercePreferences', () => {
         onboardingCompleted: true,
         weightUnit: 'lb',
         goalWeightKg: 68.5,
+        heightCm: 175,
         reminderEnabled: true,
         reminderRepeat: 'weekly',
         reminderWeekday: 5,
@@ -34,6 +35,7 @@ describe('coercePreferences', () => {
       onboardingCompleted: true,
       weightUnit: 'lb',
       goalWeightKg: 68.5,
+      heightCm: 175,
       reminderEnabled: true,
       reminderRepeat: 'weekly',
       reminderWeekday: 5,
@@ -74,6 +76,14 @@ describe('coercePreferences', () => {
     expect(
       coercePreferences({ goalWeightKg: 'heavy' }).goalWeightKg
     ).toBeNull();
+  });
+
+  it('keeps a plausible height and rejects an implausible one', () => {
+    expect(coercePreferences({ heightCm: 172.5 }).heightCm).toBe(172.5);
+    expect(coercePreferences({ heightCm: 172.56 }).heightCm).toBe(172.6);
+    expect(coercePreferences({ heightCm: 99 }).heightCm).toBeNull();
+    expect(coercePreferences({ heightCm: 251 }).heightCm).toBeNull();
+    expect(coercePreferences({ heightCm: 'tall' }).heightCm).toBeNull();
   });
 
   it('clamps out-of-range reminder fields', () => {

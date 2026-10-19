@@ -117,6 +117,34 @@ export async function readWeightHistory(
 }
 
 /**
+ * Reads the latest height record in centimetres. Health Connect stores height
+ * in metres; values outside a plausible adult range are ignored so a bad record
+ * never poisons BMI. Returns null when no usable record exists.
+ */
+export async function readLatestHealthConnectHeight(): Promise<number | null> {
+  await requireReadyClient();
+
+  const response = await readRecords('Height', {
+    timeRangeFilter: {
+      operator: 'before',
+      endTime: new Date().toISOString(),
+    },
+    ascendingOrder: false,
+    pageSize: 1,
+  });
+
+  const meters = response.records[0]?.height?.inMeters;
+  if (!Number.isFinite(meters)) return null;
+
+  const heightCm = meters * 100;
+  if (!Number.isFinite(heightCm) || heightCm < 100 || heightCm > 250) {
+    return null;
+  }
+
+  return Math.round(heightCm * 10) / 10;
+}
+
+/**
  * Deletes Heft-originated records. Deleting by `clientRecordId` only ever
  * removes records this app created, so data from other apps is never touched.
  */

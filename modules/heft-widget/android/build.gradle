@@ -1,0 +1,22 @@
+plugins {
+  id 'com.android.library'
+  id 'expo-module-gradle-plugin'
+}
+
+group = 'com.heft.widget'
+version = '1.0.0'
+
+android {
+  namespace 'com.heft.widget'
+  defaultConfig {
+    versionCode 1
+    versionName '1.0.0'
+  }
+}
+
+dependencies {
+  // The same client react-native-health-connect already ships at runtime. The
+  // widget reads and writes Health Connect directly when Heft is not running.
+  implementation 'androidx.health.connect:connect-client:1.1.0'
+  implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.2'
+}
