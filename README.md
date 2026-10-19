@@ -30,10 +30,11 @@ Health Connect mode        Local-only mode
    │                          │
    │  launch + "Sync now"     │  every read/write
    ▼                          ▼
-Read 30-day history ◀──────▶ SQLite (authoritative)
-Write weight + water         │
+Read accessible history ◀───▶ SQLite (authoritative)
+Write weight, height + water │
 Queue failures in            ├── weight_entries
 pending_weights,             └── water_entries
+pending_water
 pending_water
 ```
 
@@ -41,18 +42,22 @@ pending_water
    storage. If Health Connect is unavailable or permission is denied, Heft offers
    local storage instead of blocking.
 2. **Dashboard** (`src/app/index.tsx`) — latest reading with a compact **Sync**
-   button in the card, the water card (today's total and today's log), the
-   recent list, a pull-to-refresh, and the weigh-in reminder.
+   button in the card, the water card (today's total; tap it for **Water
+   insights**), the recent list, a pull-to-refresh, and the weigh-in reminder.
 3. **Add / edit** (`src/app/add-weight.tsx`, `src/features/weight/WeightEntryForm.tsx`)
    — a manual form (weight, date/time, note). The same screen handles edits.
 4. **History** (`src/app/history.tsx`) — the full list with edit and delete.
-5. **Insights** (`src/app/insights.tsx`) — chart, 7-day average, weekly and
-   30-day change, goal weight and milestone progress, a BMI section (current and
-   goal BMI on the adult category scale), plus (in Health Connect mode) a weekly
-   activity summary.
-6. **Assistant** (`src/app/assistant.tsx`) — an opt-in chat that can analyse your
+5. **Insights** (`src/app/insights.tsx`) — a labelled chart, 7-day average,
+   weekly and 30-day change, goal weight and milestone progress, a BMI section
+   (current and goal BMI on the adult category scale), plus (in Health Connect
+   mode) a weekly activity summary.
+6. **Water insights** (`src/app/water.tsx`) — today's total and log, 7- and
+   30-day averages, a 7-day chart, and a log that switches between today, the
+   last 7 days, and all time, all read through the same water repository as the
+   dashboard and widget.
+7. **Assistant** (`src/app/assistant.tsx`) — an opt-in chat that can analyse your
    data and help you plan. Off until you connect it; see below.
-7. **Settings** (`src/app/settings.tsx`) — storage mode, one Health Connect
+8. **Settings** (`src/app/settings.tsx`) — storage mode, one Health Connect
    connection (with a granted/not-granted checklist), sync status, units, remind
    time, the assistant connection, export / import, and
    delete-all.
@@ -64,9 +69,10 @@ pending_water
 Health Connect is the **source of truth**. Heft keeps only:
 
 - settings and preferences,
-- a 30-day **cache** of readings read back from Health Connect
-  (`weight_cache`), and
-- a `pending_weights` queue for readings that could not be written yet.
+- a disposable **cache** of weight and hydration history read back from Health
+  Connect (`weight_cache`, `water_cache`), plus 30 days of daily activity, and
+- `pending_weights` / `pending_water` queues for entries that could not be
+  written yet.
 
 Sync runs once on app launch and whenever you tap **Sync now** or pull to
 refresh. Each sync:
@@ -74,7 +80,8 @@ refresh. Each sync:
 1. skips if the mode is local-only or Health Connect is unavailable,
 2. re-checks permissions (they can be revoked at any time),
 3. retries any queued Heft writes,
-4. mirrors the accessible history into the cache, and
+4. mirrors the accessible weight and hydration history (plus recent activity)
+   into the cache, and
 5. records the last-sync time.
 
 Heft writes new readings with a `clientRecordId`, so the record can be tracked
@@ -92,17 +99,21 @@ left untouched.
 
 **Read window.** Health Connect only exposes roughly the last **30 days** to an
 app that has not been granted the historical-read permission, so Heft requests
-`READ_HEIGHT` and `READ_HEALTH_DATA_HISTORY` alongside `READ_WEIGHT` /
-`WRITE_WEIGHT`. Once granted, each sync mirrors the **full accessible weight
-history** into the local cache; without it Health Connect simply returns the last
-30 days. Height is read from Health Connect to fill in the BMI section, with a
-manual height entered on the BMI card as a fallback.
+`READ_HEIGHT`, `WRITE_HEIGHT`, and `READ_HEALTH_DATA_HISTORY` alongside
+`READ_WEIGHT` / `WRITE_WEIGHT`. Once granted, each sync mirrors the **full
+accessible weight history** into the local cache; without it Health Connect
+simply returns the last 30 days. Height is read from Health Connect to fill in
+the BMI section, with a manual height entered on the BMI card as a fallback. In
+Health Connect mode, saving that manual height also writes a `Height` record to
+Health Connect, then clears the local override so the latest Health Connect
+record is the source of truth. In local-only mode it stays in preferences.
 
 **BMI.** The Insights BMI section uses the latest reading, your goal weight, and
 your height (manual or from Health Connect). Categories follow the adult BMI
 bands — under 18.5, 18.5–24.9, 25–29.9, and 30 or more — and height changes
-recalculate both values immediately. Nothing here needs an account, the cloud,
-or the assistant; it works identically in both storage modes.
+recalculate both values immediately and are written back to Health Connect when
+that mode is active. Nothing here needs an account, the cloud, or the assistant;
+it works identically in both storage modes.
 
 **Activity (Google Fit and friends).** Activity is optional and **read-only**.
 The single Health Connect connection asks for `Steps` and `ExerciseSession`
@@ -119,22 +130,31 @@ Heft reads Fitness data through Health Connect.
 
 **Water (optional, both modes).** The dashboard card shows today's total against
 a goal set in Settings, offers **+250 ml** / **+500 ml** quick adds and one-tap
-**Undo** for the latest entry, and lists the day's individual entries under
-**Today's log**. The total resets at local midnight. In Health Connect mode,
-water access is part of the single Health Connect connection (Settings requests
+**Undo** for the latest entry. Tapping the card opens **Water insights**: today's
+log, 7- and 30-day averages, a 7-day bar chart with the goal marked, and a log
+that switches between today, the last 7 days, and all time. The displayed daily
+total resets at local midnight; historical records are retained.
+
+Every water view goes through one `WaterRepository`: `LocalWaterRepository`
+(SQLite) when local-only mode is selected, and `HealthConnectWaterRepository`
+when Health Connect mode is selected and access is granted. The dashboard, Water
+insights, and the home-screen widget all use that same routing. In Health Connect
+mode, water access is part of the single connection (Settings requests
 `READ_HYDRATION` / `WRITE_HYDRATION` alongside the other data types); new entries
 are written as `HydrationRecord`s (a one-second interval, because Health Connect
 rejects zero-length records), and hydration logged by other apps is read back
-into `water_cache`. Without the permission, entries are kept in `pending_water`
-and upload after access is granted and a sync runs. As with
-weight, only records Heft created (matched by `clientRecordId`) can be deleted
-from the app.
+into `water_cache`. If access is revoked, cached history stays visible, new
+entries queue in `pending_water`, and Water insights shows a **Reconnect** prompt
+instead of silently switching to a second, local history. As with weight, only
+records Heft created (matched by `clientRecordId`) can be deleted from the app.
 
 ### Local-only mode
 
 SQLite is authoritative. Every reading is stored in `weight_entries` and every
-drink in `water_entries`, there is no health permission, and nothing syncs.
-Export and import both work in this mode.
+drink in `water_entries`, there is no health permission, and nothing syncs. The
+dashboard, Water insights, and the widget all use the same local repository, so
+local-only mode never reads or falls back to Health Connect. Export and import
+both work in this mode.
 
 ## Assistant (optional AI)
 
@@ -577,12 +597,21 @@ development build:
 - Tap **Connect Health Connect** once, grant the data types: Settings shows each
   one as **Granted** and Insights shows a weekly activity summary. Denying any
   data type leaves weight tracking unaffected.
-- Water: tap **+250 ml** twice and **+500 ml** once; the card reads **1 L**, the
-  bar fills halfway against the default 2 L goal, and **Today's log** lists the
-  three entries with their times. **Undo** removes the last entry. In Health
-  Connect mode, confirm the entries appear in Health Connect's hydration list.
-- Revoke hydration access in Health Connect, log another glass: it shows as
-  waiting to sync, then uploads after access is restored and **Sync now** runs.
+- Water: tap **+250 ml** twice and **+500 ml** once; the dashboard card reads
+  **1 L** and the bar fills halfway against the default 2 L goal. **Undo**
+  removes the last entry. In Health Connect mode, confirm the entries appear in
+  Health Connect's hydration list.
+- Tap the dashboard water card: **Water insights** opens with today's log,
+  averages, and the 7-day chart. Switch **7 days** and **All time** and confirm
+  the daily totals and chart bars match. In local-only mode the same screen reads
+  SQLite only.
+- Revoke hydration access in Health Connect, open **Water insights**: cached
+  history stays visible, the **Reconnect Health Connect** prompt appears, and a
+  new glass is marked **Waiting to sync** rather than creating a second local
+  history. Restore access and sync to upload it.
+- Edit the height on the BMI card in Health Connect mode: confirm a new `Height`
+  record appears in Health Connect, the footer changes to **· Health Connect**,
+  and BMI recalculates. In local-only mode the height stays on the device.
 - Change **Water goal** in Settings and check the dashboard bar rescales.
 - Assistant: connect via ChatGPT (or paste an API key), pick a model, send a
   message; toggle **Share health data** and confirm **Preview shared data**
@@ -632,7 +661,7 @@ src/
       weightRepository.ts           Local + Health Connect repositories
       WeightEntryForm.tsx           manual entry form
     health-connect/
-      healthConnectPermissions.ts   availability + weight/activity/hydration permissions
+      healthConnectPermissions.ts   availability + all health permissions
       healthConnectAdapter.ts       weight read / write / delete via Health Connect
       hydrationAdapter.ts           water read / write / delete via Health Connect
       weightCache.ts                weight cache read + windowed replace
@@ -641,7 +670,7 @@ src/
     water/
       types.ts                      WaterEntry + row mappers
       waterCalculations.ts          pure volume/total/goal helpers (unit-tested)
-      waterRepository.ts            Local + Health Connect water repositories
+      waterRepository.ts            single SQLite-or-Health-Connect water route
     activity/
       activityAdapter.ts            daily steps + exercise sessions via Health Connect
       activityCache.ts              activity persistence + windowed replace
@@ -686,7 +715,7 @@ src/
 | ------------------ | ---------------------------------------------------- |
 | `preferences`      | Key/value store; app preferences as one JSON blob    |
 | `weight_entries`   | Authoritative store for **local-only** mode          |
-| `weight_cache`     | Disposable 30-day mirror of Health Connect           |
+| `weight_cache`     | Disposable mirror of Health Connect weight history   |
 | `pending_weights`  | Heft readings awaiting a Health Connect write        |
 | `water_entries`    | Authoritative water log for **local-only** mode      |
 | `water_cache`      | Disposable mirror of Health Connect hydration        |
@@ -710,7 +739,7 @@ Settings and cache live locally in **both** modes; only `weight_entries` and
 - Local mode: measurements and water never leave the device.
 - Health Connect mode: data is read from and written to Android Health Connect
   under your control. Heft never touches records it did not create. Activity is
-  read-only; hydration is read and written only after you connect it.
+  read-only; weight, height, and water are written only when you add them.
 - Assistant: off by default. When on, requests go straight to OpenAI with your
   own credentials. Weight/trend data is only attached after you turn on **Share
   health data with the AI**, which shows exactly what will be sent.
@@ -720,8 +749,9 @@ Settings and cache live locally in **both** modes; only `weight_entries` and
 
 ## Known limitations / next steps
 
-- **30-day read window.** Older Health Connect history is not imported (see
-  above); extending it needs the historical-read permission.
+- **Activity read window.** Steps and exercise cover the last 30 days; weight
+  and hydration mirror all history Health Connect exposes. Older records still
+  require the historical-read permission.
 - **Push-then-pull sync only.** Heft does not reconcile Health Connect edits made
   by other apps for records it already cached beyond re-reading the window.
 - **Import is local-only** by design, to avoid duplicating Health Connect data.
@@ -739,6 +769,8 @@ Settings and cache live locally in **both** modes; only `weight_entries` and
   Connect, preserving its "no health permission" promise.
 - **Water is tracked but not exported yet.** The CSV/JSON export, import and the
   assistant's shared health summary currently cover weight and activity only.
-  Water also follows the same 30-day Health Connect read window as weight.
+  Water history is mirrored like weight, so the all-time log is limited only by
+  what Health Connect exposes (the 30-day default without the historical-read
+  permission).
 - A full end-to-end Android build has not been run in CI; validate
   `npx expo run:android` on a physical device before release.

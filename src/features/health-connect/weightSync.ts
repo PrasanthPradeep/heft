@@ -29,15 +29,14 @@ import {
 import { replaceCacheWindow, upsertCachedWeights } from './weightCache';
 
 /**
- * Activity and hydration only need a recent window. Weight history is not
- * windowed: Heft mirrors every record Health Connect will return. The
+ * Activity only needs a recent window. Weight and hydration are not windowed:
+ * Heft mirrors every record Health Connect will return. The
  * READ_HEALTH_DATA_HISTORY permission, requested with the weight permissions,
  * unlocks records older than the provider's 30-day default.
  */
 export const READ_WINDOW_DAYS = 30;
-const DAY_MS = 24 * 60 * 60 * 1000;
 /** Health Connect is the source of truth, so start before any real record. */
-const WEIGHT_HISTORY_START = new Date(0).toISOString();
+const ALL_HISTORY_START = new Date(0).toISOString();
 
 export type SyncStatus = 'ok' | 'skipped' | 'error';
 
@@ -129,7 +128,7 @@ async function refreshCache(): Promise<number> {
 
   let records;
   try {
-    records = await readWeightHistory(WEIGHT_HISTORY_START, endTime);
+    records = await readWeightHistory(ALL_HISTORY_START, endTime);
   } catch {
     // Permission revoked mid-flight or an unavailable provider: leave the cache.
     return 0;
@@ -139,7 +138,7 @@ async function refreshCache(): Promise<number> {
   const unique = new Map(records.map((record) => [record.externalId, record]));
 
   const db = await getDatabase();
-  await replaceCacheWindow(db, WEIGHT_HISTORY_START, endTime, [
+  await replaceCacheWindow(db, ALL_HISTORY_START, endTime, [
     ...unique.values(),
   ]);
 
@@ -219,7 +218,8 @@ async function flushPendingWater(): Promise<{ written: number; failed: number }>
 /** Mirrors the accessible Health Connect hydration history into the cache. */
 async function refreshHydration(): Promise<number> {
   const endTime = new Date().toISOString();
-  const startTime = new Date(Date.now() - READ_WINDOW_DAYS * DAY_MS).toISOString();
+  // All accessible history, so Water insights can offer a true all-time log.
+  const startTime = ALL_HISTORY_START;
 
   let records;
   try {

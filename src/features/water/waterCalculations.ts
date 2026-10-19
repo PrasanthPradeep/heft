@@ -97,6 +97,45 @@ export function progressRatio(totalMl: number, targetMl: number): number {
   return Math.min(1, totalMl / targetMl);
 }
 
+export type DailyWaterTotal = { day: string; totalMl: number };
+
+/**
+ * Oldest-first totals for each of the last `days` local days. Days with no
+ * entries are included with a zero total so charts can keep a stable axis.
+ */
+export function dailyTotals(
+  entries: WaterEntry[],
+  days: number,
+  now: Date = new Date()
+): DailyWaterTotal[] {
+  if (days <= 0) return [];
+
+  const keys: string[] = [];
+  const totals = new Map<string, number>();
+  for (let offset = days - 1; offset >= 0; offset -= 1) {
+    const key = dayKeyOffset(now, offset);
+    keys.push(key);
+    totals.set(key, 0);
+  }
+
+  for (const entry of entries) {
+    const key = localDayKey(new Date(entry.loggedAt));
+    if (!totals.has(key)) continue;
+    totals.set(key, (totals.get(key) ?? 0) + entry.volumeMl);
+  }
+
+  return keys.map((day) => ({ day, totalMl: totals.get(day) ?? 0 }));
+}
+
+/** Mean intake across days that actually have entries. */
+export function averageMl(totals: DailyWaterTotal[]): number | null {
+  const tracked = totals.filter((day) => day.totalMl > 0);
+  if (tracked.length === 0) return null;
+  return (
+    tracked.reduce((sum, day) => sum + day.totalMl, 0) / tracked.length
+  );
+}
+
 export type WaterSummary = {
   todayMl: number;
   /** Mean intake over the last 7 days, counting only days with entries. */
@@ -109,28 +148,10 @@ export function summarizeWater(
   entries: WaterEntry[],
   now: Date = new Date()
 ): WaterSummary {
-  const today = localDayKey(now);
-  const todayMl = totalForDay(entries, today);
-
-  const keys = new Set<string>();
-  for (let offset = 0; offset < 7; offset += 1) {
-    keys.add(dayKeyOffset(now, offset));
-  }
-
-  const byDay = new Map<string, number>();
-  for (const entry of entries) {
-    const key = localDayKey(new Date(entry.loggedAt));
-    if (!keys.has(key)) continue;
-    byDay.set(key, (byDay.get(key) ?? 0) + entry.volumeMl);
-  }
-
-  const days = [...byDay.values()];
+  const totals = dailyTotals(entries, 7, now);
   return {
-    todayMl,
-    averageMl7d:
-      days.length > 0
-        ? days.reduce((sum, value) => sum + value, 0) / days.length
-        : null,
-    daysTracked7d: days.length,
+    todayMl: totals[totals.length - 1]?.totalMl ?? 0,
+    averageMl7d: averageMl(totals),
+    daysTracked7d: totals.filter((day) => day.totalMl > 0).length,
   };
 }

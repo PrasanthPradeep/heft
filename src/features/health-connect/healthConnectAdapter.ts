@@ -1,8 +1,10 @@
+import { randomUUID } from 'expo-crypto';
 import {
   RecordingMethod,
   deleteRecordsByUuids,
   insertRecords,
   readRecords,
+  type HeightRecord,
   type WeightRecord,
 } from 'react-native-health-connect';
 
@@ -114,6 +116,39 @@ export async function readWeightHistory(
   }
 
   return results;
+}
+
+/**
+ * Writes a height entered on the BMI card. Health Connect records are
+ * immutable, so an update becomes a new record and the latest one is what the
+ * BMI section reads back.
+ */
+export async function writeHealthConnectHeight(
+  heightCm: number
+): Promise<string> {
+  await requireReadyClient();
+
+  if (!Number.isFinite(heightCm) || heightCm < 100 || heightCm > 250) {
+    throw new Error('Height must be between 100 and 250 cm.');
+  }
+
+  const record: HeightRecord = {
+    recordType: 'Height',
+    time: new Date().toISOString(),
+    height: { value: Math.round(heightCm * 10) / 1000, unit: 'meters' },
+    metadata: {
+      clientRecordId: randomUUID(),
+      clientRecordVersion: 0,
+      recordingMethod: RecordingMethod.RECORDING_METHOD_MANUAL_ENTRY,
+    },
+  };
+
+  const ids = await insertRecords([record]);
+  const id = ids[0];
+  if (!id) {
+    throw new Error('Health Connect did not return a record id.');
+  }
+  return id;
 }
 
 /**

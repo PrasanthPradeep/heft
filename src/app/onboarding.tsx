@@ -85,9 +85,9 @@ export default function OnboardingScreen() {
           <Text style={styles.cardTitle}>Use Health Connect</Text>
           <Text style={styles.cardBody}>
             Connect once to read your weight, height, steps, workouts, water, and
-            full weight history, and to save the weight and water you add. You can
-            allow or deny each data type in the Health Connect sheet. Heft keeps
-            only settings and a small cache on this device.
+            full weight history, and to save the weight, height, and water you
+            add. You can allow or deny each data type in the Health Connect
+            sheet. Heft keeps only settings and a small cache on this device.
           </Text>
           <Button
             label={busy ? 'Please wait…' : 'Connect Health Connect'}

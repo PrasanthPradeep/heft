@@ -12,7 +12,7 @@ import {
 
 import { Button, Card, Screen } from '@/components/ui';
 import { Colors, Radius, Spacing } from '@/constants/theme';
-import { formatDateTime, formatTime, formatWeight } from '@/lib/format';
+import { formatDateTime, formatWeight } from '@/lib/format';
 import { localDayKey } from '@/features/activity/activityCalculations';
 import { syncHealthConnect } from '@/features/health-connect/weightSync';
 import {
@@ -52,6 +52,10 @@ export default function HomeScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [syncing, setSyncing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [viewportHeight, setViewportHeight] = useState(0);
+  const [recentTop, setRecentTop] = useState(0);
+  const [recentHeaderHeight, setRecentHeaderHeight] = useState(0);
+  const [recentRowHeight, setRecentRowHeight] = useState(0);
 
   const repository = getWeightRepository(preferences.storageMode);
   const waterRepository = getWaterRepository(preferences.storageMode);
@@ -174,7 +178,15 @@ export default function HomeScreen() {
   const latest = entries[0] ?? null;
   const pendingCount = entries.filter((entry) => entry.pending).length;
   const showReminder = shouldRemindWeighIn(entries, preferences);
-  const recent = entries.slice(0, RECENT_LIMIT);
+  const roomForRecent = Math.max(0, viewportHeight - recentTop - recentHeaderHeight);
+  const visibleRecentCount =
+    recentRowHeight > 0
+      ? Math.min(
+          RECENT_LIMIT,
+          Math.floor(roomForRecent / (recentRowHeight + Spacing.two))
+        )
+      : 1;
+  const recent = entries.slice(0, visibleRecentCount);
 
   const today = localDayKey(new Date());
   const waterSummary = summarizeWater(water);
@@ -188,6 +200,7 @@ export default function HomeScreen() {
     <Screen edges={['left', 'right']}>
       <ScrollView
         contentContainerStyle={styles.content}
+        onLayout={(event) => setViewportHeight(event.nativeEvent.layout.height)}
         refreshControl={
           <RefreshControl refreshing={refreshing} onRefresh={refresh} />
         }>
@@ -264,116 +277,115 @@ export default function HomeScreen() {
           </Text>
         ) : null}
 
-        <Card style={styles.waterCard}>
-          <View style={styles.waterHeader}>
-            <View style={styles.waterHeading}>
-              <Text style={styles.waterTitle}>Water</Text>
-              <Text style={styles.waterMeta}>
-                Today · Goal {formatVolume(preferences.waterTargetMl)}
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={`Water, ${formatVolume(
+            waterSummary.todayMl
+          )} today. Open water insights.`}
+          accessibilityHint="Shows today's log, history, and trends"
+          onPress={() => router.push('/water')}
+          style={({ pressed }) => [pressed && styles.waterPressed]}>
+          <Card style={styles.waterCard}>
+            <View style={styles.waterHeader}>
+              <View style={styles.waterHeading}>
+                <Text style={styles.waterTitle}>Water</Text>
+                <Text style={styles.waterMeta}>
+                  Today · Goal {formatVolume(preferences.waterTargetMl)}
+                </Text>
+              </View>
+              <Text style={styles.waterValue}>
+                {formatVolume(waterSummary.todayMl)}
               </Text>
             </View>
-            <Text style={styles.waterValue}>
-              {formatVolume(waterSummary.todayMl)}
-            </Text>
-          </View>
 
-          <View
-            accessibilityRole="progressbar"
-            accessibilityLabel="Water progress today"
-            accessibilityValue={{
-              min: 0,
-              max: preferences.waterTargetMl,
-              now: Math.min(waterSummary.todayMl, preferences.waterTargetMl),
-            }}
-            style={styles.waterTrack}>
             <View
-              style={[
-                styles.waterFill,
-                {
-                  width: `${Math.round(
-                    progressRatio(
-                      waterSummary.todayMl,
-                      preferences.waterTargetMl
-                    ) * 100
-                  )}%`,
-                },
-              ]}
-            />
-          </View>
+              accessibilityRole="progressbar"
+              accessibilityLabel="Water progress today"
+              accessibilityValue={{
+                min: 0,
+                max: preferences.waterTargetMl,
+                now: Math.min(waterSummary.todayMl, preferences.waterTargetMl),
+              }}
+              style={styles.waterTrack}>
+              <View
+                style={[
+                  styles.waterFill,
+                  {
+                    width: `${Math.round(
+                      progressRatio(
+                        waterSummary.todayMl,
+                        preferences.waterTargetMl
+                      ) * 100
+                    )}%`,
+                  },
+                ]}
+              />
+            </View>
 
-          <View style={styles.waterActions}>
-            <Button
-              label={`+${GLASS_ML} ml`}
-              variant="secondary"
-              onPress={() => addWater(GLASS_ML)}
-              disabled={waterBusy}
-              style={styles.flex}
-            />
-            <Button
-              label={`+${BOTTLE_ML} ml`}
-              variant="secondary"
-              onPress={() => addWater(BOTTLE_ML)}
-              disabled={waterBusy}
-              style={styles.flex}
-            />
-          </View>
+            <View style={styles.waterActions}>
+              <Button
+                label={`+${GLASS_ML} ml`}
+                variant="secondary"
+                onPress={() => addWater(GLASS_ML)}
+                disabled={waterBusy}
+                style={styles.flex}
+              />
+              <Button
+                label={`+${BOTTLE_ML} ml`}
+                variant="secondary"
+                onPress={() => addWater(BOTTLE_ML)}
+                disabled={waterBusy}
+                style={styles.flex}
+              />
+            </View>
 
-          <View style={styles.waterFooter}>
-            <Text style={styles.waterHint}>
-              {waterSummary.averageMl7d !== null
-                ? `7-day average ${formatVolume(waterSummary.averageMl7d)}`
-                : 'No water logged yet'}
-            </Text>
-            {lastWaterToday ? (
-              <Text
-                accessibilityRole="button"
-                accessibilityLabel="Remove the last water entry"
-                style={styles.waterUndo}
-                onPress={() => undoWater(lastWaterToday.id)}>
-                Undo
+            <View style={styles.waterFooter}>
+              <Text style={styles.waterHint}>
+                {waterSummary.averageMl7d !== null
+                  ? `7-day average ${formatVolume(waterSummary.averageMl7d)}`
+                  : 'No water logged yet'}
+              </Text>
+              {lastWaterToday ? (
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel="Remove the last water entry"
+                  hitSlop={8}
+                  onPress={() => undoWater(lastWaterToday.id)}>
+                  <Text style={styles.waterUndo}>Undo</Text>
+                </Pressable>
+              ) : null}
+            </View>
+
+            <View style={styles.waterInsightsRow}>
+              <Text style={styles.waterInsightsText}>Water insights</Text>
+              <Text style={styles.waterInsightsChevron}>›</Text>
+            </View>
+
+            {isHealthConnect && !hydrationAccess.canWrite ? (
+              <Text style={styles.waterHint}>
+                {hasHydrationAccess(hydrationAccess)
+                  ? 'Health Connect write access is off, so new entries stay on this device.'
+                  : 'Water stays on this device until you connect it in Settings.'}
               </Text>
             ) : null}
-          </View>
 
-          <View style={styles.waterLog}>
-            <Text style={styles.waterLogTitle}>Today&apos;s log</Text>
-            {todayWater.length === 0 ? (
+            {isHealthConnect && hydrationAccess.canWrite && pendingWater > 0 ? (
               <Text style={styles.waterHint}>
-                No water logged yet today. The total resets at midnight.
+                {pendingWater} water {pendingWater === 1 ? 'entry' : 'entries'}{' '}
+                waiting to sync.
               </Text>
-            ) : (
-              todayWater.map((entry) => (
-                <View key={entry.id} style={styles.waterLogRow}>
-                  <Text style={styles.waterLogTime}>
-                    {formatTime(entry.loggedAt)}
-                  </Text>
-                  <Text style={styles.waterLogAmount}>
-                    {formatVolume(entry.volumeMl)}
-                  </Text>
-                </View>
-              ))
-            )}
-          </View>
-
-          {isHealthConnect && !hydrationAccess.canWrite ? (
-            <Text style={styles.waterHint}>
-              {hasHydrationAccess(hydrationAccess)
-                ? 'Health Connect write access is off, so new entries stay on this device.'
-                : 'Water stays on this device until you connect it in Settings.'}
-            </Text>
-          ) : null}
-
-          {isHealthConnect && hydrationAccess.canWrite && pendingWater > 0 ? (
-            <Text style={styles.waterHint}>
-              {pendingWater} water {pendingWater === 1 ? 'entry' : 'entries'}{' '}
-              waiting to sync.
-            </Text>
-          ) : null}
-        </Card>
+            ) : null}
+          </Card>
+        </Pressable>
 
         {error ? <Text style={styles.error}>{error}</Text> : null}
 
-        <View style={styles.sectionHeader}>
+        <View
+          style={styles.sectionHeader}
+          onLayout={(event) => {
+            setRecentTop(event.nativeEvent.layout.y);
+            setRecentHeaderHeight(event.nativeEvent.layout.height);
+          }}>
           <Text style={styles.sectionTitle}>Recent</Text>
           <Text
             style={styles.sectionLink}
@@ -391,26 +403,35 @@ export default function HomeScreen() {
             </Text>
           </Card>
         ) : (
-          recent.map((entry) => (
-            <Card key={entry.id} style={styles.entry}>
-              <View style={styles.entryMain}>
-                <Text style={styles.entryWeight}>
-                  {formatWeight(entry.weightKg, unit)} {unit}
-                </Text>
-                <Text style={styles.entryDate}>
-                  {formatDateTime(entry.measuredAt)}
-                </Text>
-              </View>
-              <View style={styles.badges}>
-                <Text style={styles.badge}>
-                  {entry.pending
-                    ? 'NOT SYNCED'
-                    : entry.owned
-                      ? 'HEFT'
-                      : 'HEALTH CONNECT'}
-                </Text>
-              </View>
-            </Card>
+          recent.map((entry, index) => (
+            <View
+              key={entry.id}
+              onLayout={
+                index === 0
+                  ? (event) =>
+                      setRecentRowHeight(event.nativeEvent.layout.height)
+                  : undefined
+              }>
+              <Card style={styles.entry}>
+                <View style={styles.entryMain}>
+                  <Text style={styles.entryWeight}>
+                    {formatWeight(entry.weightKg, unit)} {unit}
+                  </Text>
+                  <Text style={styles.entryDate}>
+                    {formatDateTime(entry.measuredAt)}
+                  </Text>
+                </View>
+                <View style={styles.badges}>
+                  <Text style={styles.badge}>
+                    {entry.pending
+                      ? 'NOT SYNCED'
+                      : entry.owned
+                        ? 'HEFT'
+                        : 'HEALTH CONNECT'}
+                  </Text>
+                </View>
+              </Card>
+            </View>
           ))
         )}
       </ScrollView>
@@ -504,6 +525,7 @@ const styles = StyleSheet.create({
   },
   flex: { flex: 1 },
   waterCard: { gap: Spacing.two },
+  waterPressed: { opacity: 0.85 },
   waterHeader: {
     flexDirection: 'row',
     alignItems: 'flex-end',
@@ -537,27 +559,16 @@ const styles = StyleSheet.create({
   },
   waterHint: { color: Colors.textSecondary, fontSize: 13, lineHeight: 19 },
   waterUndo: { color: Colors.brand, fontWeight: '700', fontSize: 13 },
-  waterLog: {
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: Colors.border,
-    paddingTop: Spacing.two,
-    gap: Spacing.one,
-  },
-  waterLogTitle: {
-    color: Colors.textMuted,
-    fontSize: 12,
-    fontWeight: '700',
-    letterSpacing: 0.3,
-    textTransform: 'uppercase',
-  },
-  waterLogRow: {
+  waterInsightsRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    gap: Spacing.two,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: Colors.border,
+    paddingTop: Spacing.two,
   },
-  waterLogTime: { color: Colors.textSecondary, fontSize: 13 },
-  waterLogAmount: { color: Colors.text, fontSize: 13, fontWeight: '600' },
+  waterInsightsText: { color: Colors.brand, fontSize: 13, fontWeight: '700' },
+  waterInsightsChevron: { color: Colors.brand, fontSize: 16, fontWeight: '700' },
   reminder: {
     color: Colors.warning,
     backgroundColor: Colors.warningTint,

@@ -29,6 +29,11 @@ export const WEIGHT_PERMISSIONS: HealthConnectPermissionRequest[] = [
   { accessType: 'read', recordType: 'ReadHealthDataHistory' },
 ];
 
+/** Write access for heights entered on the BMI card. */
+export const HEIGHT_WRITE_PERMISSIONS: Permission[] = [
+  { accessType: 'write', recordType: 'Height' },
+];
+
 /**
  * Read-only activity access. Google Fit (and other fitness apps) sync their data
  * into Health Connect, so this is how Heft reads "Google Fit" steps and workouts
@@ -42,7 +47,8 @@ export const ACTIVITY_PERMISSIONS: Permission[] = [
 /**
  * Hydration is optional and independent of the weight sync. Read access imports
  * water logged by other apps; write access puts Heft's own entries into Health
- * Connect. Both are requested only when the user connects water from Settings.
+ * Connect. Both are part of the single connection flow and can be denied
+ * individually in the system sheet.
  */
 export const HYDRATION_PERMISSIONS: Permission[] = [
   { accessType: 'read', recordType: 'Hydration' },
@@ -55,6 +61,7 @@ export const HYDRATION_PERMISSIONS: Permission[] = [
  */
 export const ALL_HEALTH_PERMISSIONS: HealthConnectPermissionRequest[] = [
   ...WEIGHT_PERMISSIONS,
+  ...HEIGHT_WRITE_PERMISSIONS,
   ...ACTIVITY_PERMISSIONS,
   ...HYDRATION_PERMISSIONS,
 ];
@@ -166,6 +173,50 @@ export async function requestWeightPermissions(): Promise<WeightPermissionState>
   return getWeightPermissionState();
 }
 
+export type HeightPermissionState = {
+  canRead: boolean;
+  canWrite: boolean;
+};
+
+export const NO_HEIGHT_PERMISSIONS: HeightPermissionState = {
+  canRead: false,
+  canWrite: false,
+};
+
+/** Reads the currently granted height permissions. */
+export async function getHeightPermissionState(): Promise<HeightPermissionState> {
+  if (!(await ensureHealthConnectReady())) return NO_HEIGHT_PERMISSIONS;
+
+  try {
+    const granted = await getGrantedPermissions();
+    const has = (accessType: 'read' | 'write') =>
+      granted.some(
+        (permission) =>
+          permission.accessType === accessType &&
+          permission.recordType === 'Height'
+      );
+    return { canRead: has('read'), canWrite: has('write') };
+  } catch {
+    return NO_HEIGHT_PERMISSIONS;
+  }
+}
+
+/**
+ * Requests write access for a height entered on the BMI card. Read access is
+ * requested by the normal weight/height flow; this is only the missing half.
+ */
+export async function requestHeightWritePermission(): Promise<HeightPermissionState> {
+  if (!(await ensureHealthConnectReady())) return NO_HEIGHT_PERMISSIONS;
+
+  try {
+    await requestPermission(HEIGHT_WRITE_PERMISSIONS);
+  } catch {
+    // Fall through and report whatever was actually granted.
+  }
+
+  return getHeightPermissionState();
+}
+
 export type ActivityPermissionState = {
   canReadSteps: boolean;
   canReadExercise: boolean;
@@ -201,8 +252,8 @@ export async function getActivityPermissionState(): Promise<ActivityPermissionSt
 }
 
 /**
- * Requests read access to steps and exercise. Called only when the user opts in
- * from Settings, so onboarding never asks for more than body weight.
+ * Requests read access to steps and exercise as part of the single connect
+ * flow. The user can deny either data type in the system sheet.
  */
 export async function requestActivityPermissions(): Promise<ActivityPermissionState> {
   if (!(await ensureHealthConnectReady())) return NO_ACTIVITY_PERMISSIONS;
@@ -249,8 +300,8 @@ export async function getHydrationPermissionState(): Promise<HydrationPermission
 }
 
 /**
- * Requests hydration access. Called only when the user connects water from
- * Settings, so the rest of the app never asks for it implicitly.
+ * Requests hydration access. Usually part of the single connect flow; kept as a
+ * standalone call for the reconnect prompt on the water screen.
  */
 export async function requestHydrationPermissions(): Promise<HydrationPermissionState> {
   if (!(await ensureHealthConnectReady())) return NO_HYDRATION_PERMISSIONS;
@@ -269,6 +320,7 @@ export type HealthAccessState = {
   activity: ActivityPermissionState;
   hydration: HydrationPermissionState;
   canReadHeight: boolean;
+  canWriteHeight: boolean;
 };
 
 export const NO_HEALTH_ACCESS: HealthAccessState = {
@@ -276,6 +328,7 @@ export const NO_HEALTH_ACCESS: HealthAccessState = {
   activity: NO_ACTIVITY_PERMISSIONS,
   hydration: NO_HYDRATION_PERMISSIONS,
   canReadHeight: false,
+  canWriteHeight: false,
 };
 
 /** One snapshot of every record permission Heft uses. */
@@ -308,6 +361,7 @@ export async function getAllPermissionState(): Promise<HealthAccessState> {
         canWrite: has('write', 'Hydration'),
       },
       canReadHeight: has('read', 'Height'),
+      canWriteHeight: has('write', 'Height'),
     };
   } catch {
     return NO_HEALTH_ACCESS;

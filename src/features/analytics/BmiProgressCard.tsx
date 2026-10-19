@@ -138,7 +138,11 @@ export function BmiProgressCard({
           </View>
 
           <View style={styles.heightMeta}>
-            <Text style={styles.hintSmall}>Stored on this device.</Text>
+            <Text style={styles.hintSmall}>
+              {healthConnectAvailable
+                ? 'Saved to Health Connect when you update it.'
+                : 'Stored on this device.'}
+            </Text>
             {effectiveHeightCm !== null ? (
               <Pressable
                 onPress={cancelEditingHeight}

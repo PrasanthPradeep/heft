@@ -5,6 +5,8 @@ import {
   GLASS_ML,
   HYDRATION_INTERVAL_MS,
   MAX_VOLUME_ML,
+  averageMl,
+  dailyTotals,
   entriesForDay,
   formatVolume,
   hydrationInterval,
@@ -132,6 +134,32 @@ describe('progressRatio', () => {
     expect(progressRatio(500, 0)).toBe(0);
     expect(progressRatio(500, -1)).toBe(0);
     expect(progressRatio(Number.NaN, 2000)).toBe(0);
+  });
+});
+
+describe('daily totals window', () => {
+  const entries = [
+    entry(250, at(0, 8)),
+    entry(500, at(0, 11)),
+    entry(1500, at(1)),
+    entry(750, at(3)),
+  ];
+
+  it('returns oldest-first totals and zero-filled missing days', () => {
+    const totals = dailyTotals(entries, 4, NOW);
+    expect(totals.map((day) => day.day)).toEqual([
+      '2026-03-07',
+      '2026-03-08',
+      '2026-03-09',
+      '2026-03-10',
+    ]);
+    expect(totals.map((day) => day.totalMl)).toEqual([750, 0, 1500, 750]);
+  });
+
+  it('averages only the days that have entries', () => {
+    expect(averageMl(dailyTotals(entries, 7, NOW))).toBe(1000);
+    expect(averageMl(dailyTotals([], 7, NOW))).toBeNull();
+    expect(averageMl(dailyTotals([entry(2000, at(9))], 7, NOW))).toBeNull();
   });
 });
 

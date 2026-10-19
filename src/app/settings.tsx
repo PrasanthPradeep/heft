@@ -164,7 +164,7 @@ export default function SettingsScreen() {
       await load();
       Alert.alert(
         'Health Connect enabled',
-        'Heft will read and write your weight and water, and read your height, steps, workouts, and full history.'
+        'Heft will read and write your weight, height, and water, and read your steps, workouts, and full history.'
       );
     } finally {
       setBusy(false);
@@ -443,14 +443,13 @@ export default function SettingsScreen() {
 
   const weightGranted =
     healthAccess.weight.canRead && healthAccess.weight.canWrite;
+  const heightGranted =
+    healthAccess.canReadHeight && healthAccess.canWriteHeight;
   const activityGranted = hasActivityAccess(healthAccess.activity);
   const hydrationGranted =
     hasHydrationAccess(healthAccess.hydration) && healthAccess.hydration.canWrite;
   const allGranted =
-    weightGranted &&
-    healthAccess.canReadHeight &&
-    activityGranted &&
-    hydrationGranted;
+    weightGranted && heightGranted && activityGranted && hydrationGranted;
 
   return (
     <Screen edges={['left', 'right']}>
@@ -524,14 +523,15 @@ export default function SettingsScreen() {
             <Card style={styles.stack}>
               <Text style={styles.cardText}>
                 Heft reads your weight, height, steps, workouts, water, and your
-                full weight history. It writes only the weight and water you add.
+                full weight history. It writes the weight, height, and water you
+                add.
               </Text>
 
               <View style={styles.accessList}>
                 <AccessRow label="Weight (read & write)" granted={weightGranted} />
                 <AccessRow
-                  label="Height (read)"
-                  granted={healthAccess.canReadHeight}
+                  label="Height (read & write)"
+                  granted={heightGranted}
                 />
                 <AccessRow
                   label="Steps & workouts (read)"

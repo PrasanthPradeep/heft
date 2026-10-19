@@ -68,8 +68,13 @@ const HYDRATION_PERMISSIONS = [
   { accessType: 'write', recordType: 'Hydration' },
 ];
 
+const HEIGHT_WRITE_PERMISSIONS = [
+  { accessType: 'write', recordType: 'Height' },
+];
+
 const ALL_PERMISSIONS = [
   ...WEIGHT_PERMISSIONS,
+  ...HEIGHT_WRITE_PERMISSIONS,
   ...ACTIVITY_PERMISSIONS,
   ...HYDRATION_PERMISSIONS,
 ];
@@ -178,6 +183,7 @@ describe('Health Connect client initialisation', () => {
     connect.getGrantedPermissions.mockResolvedValue([
       ...grantWeight(),
       { accessType: 'read', recordType: 'Height' },
+      { accessType: 'write', recordType: 'Height' },
       ...grantActivity(),
       ...HYDRATION_PERMISSIONS,
     ]);
@@ -191,6 +197,7 @@ describe('Health Connect client initialisation', () => {
       activity: { canReadSteps: true, canReadExercise: true },
       hydration: { canRead: true, canWrite: true },
       canReadHeight: true,
+      canWriteHeight: true,
     });
   });
 
@@ -209,6 +216,7 @@ describe('Health Connect client initialisation', () => {
       activity: { canReadSteps: true, canReadExercise: false },
       hydration: { canRead: false, canWrite: false },
       canReadHeight: false,
+      canWriteHeight: false,
     });
   });
 });

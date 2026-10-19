@@ -15,8 +15,15 @@ import { Colors, Radius, Spacing } from '@/constants/theme';
 import { formatDateTime, formatSigned, formatWeight } from '@/lib/format';
 import { WeightChart } from '@/features/analytics/WeightChart';
 import { BmiProgressCard } from '@/features/analytics/BmiProgressCard';
-import { readLatestHealthConnectHeight } from '@/features/health-connect/healthConnectAdapter';
-import { requestWeightPermissions } from '@/features/health-connect/healthConnectPermissions';
+import {
+  readLatestHealthConnectHeight,
+  writeHealthConnectHeight,
+} from '@/features/health-connect/healthConnectAdapter';
+import {
+  getHeightPermissionState,
+  requestHeightWritePermission,
+  requestWeightPermissions,
+} from '@/features/health-connect/healthConnectPermissions';
 import { loadDailyActivity } from '@/features/activity/activityRepository';
 import {
   summarizeActivity,
@@ -170,6 +177,47 @@ export default function InsightsScreen() {
     }
   }
 
+  /**
+   * Stores a manually typed height. In Health Connect mode the value is also
+   * written there; on success the local override is cleared so Health Connect
+   * is the single source of truth. If writing is not allowed, the local value
+   * is kept so BMI keeps working.
+   */
+  async function saveHeight(heightCm: number) {
+    await updatePreferences({ heightCm });
+
+    if (preferences.storageMode !== 'health-connect') {
+      setHealthConnectHeightCm(null);
+      return;
+    }
+
+    let access = await getHeightPermissionState();
+    if (!access.canWrite) {
+      access = await requestHeightWritePermission();
+    }
+
+    if (!access.canWrite) {
+      setHealthConnectHeightCm(null);
+      Alert.alert(
+        'Height saved on this device',
+        'Allow Height access in Health Connect to save it there too. You can grant it in Settings.'
+      );
+      return;
+    }
+
+    try {
+      await writeHealthConnectHeight(heightCm);
+      await updatePreferences({ heightCm: null });
+      setHealthConnectHeightCm(heightCm);
+    } catch {
+      setHealthConnectHeightCm(null);
+      Alert.alert(
+        'Height saved on this device',
+        'Health Connect could not be updated right now. Heft will keep using the height you entered.'
+      );
+    }
+  }
+
   return (
     <Screen edges={['left', 'right']}>
       <ScrollView
@@ -301,10 +349,7 @@ export default function InsightsScreen() {
           healthConnectHeightCm={healthConnectHeightCm}
           healthConnectAvailable={preferences.storageMode === 'health-connect'}
           weightUnit={unit}
-          onSaveHeight={async (heightCm) => {
-            await updatePreferences({ heightCm });
-            setHealthConnectHeightCm(null);
-          }}
+          onSaveHeight={saveHeight}
           onUseHealthConnectHeight={useHealthConnectHeight}
         />
 
