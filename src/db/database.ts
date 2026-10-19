@@ -48,12 +48,12 @@ export async function writePreference(
   );
 }
 
-/** Deletes all user data (measurements, cache and pending writes). */
+/** Deletes all user data (measurements, water, caches and pending writes). */
 export async function clearAllData(): Promise<void> {
   const db = await getDatabase();
   await db.withExclusiveTransactionAsync(async (txn) => {
     await txn.execAsync(
-      'DELETE FROM weight_entries; DELETE FROM weight_cache; DELETE FROM pending_weights; DELETE FROM activity_daily; DELETE FROM activity_sessions; DELETE FROM ai_messages;'
+      'DELETE FROM weight_entries; DELETE FROM weight_cache; DELETE FROM pending_weights; DELETE FROM activity_daily; DELETE FROM activity_sessions; DELETE FROM ai_messages; DELETE FROM water_entries; DELETE FROM water_cache; DELETE FROM pending_water;'
     );
   });
 }
@@ -65,7 +65,7 @@ export async function resetDatabase(): Promise<void> {
   const db = await getDatabase();
   await db.withExclusiveTransactionAsync(async (txn) => {
     await txn.execAsync(
-      'DELETE FROM weight_entries; DELETE FROM weight_cache; DELETE FROM pending_weights; DELETE FROM activity_daily; DELETE FROM activity_sessions; DELETE FROM ai_messages; DELETE FROM preferences;'
+      'DELETE FROM weight_entries; DELETE FROM weight_cache; DELETE FROM pending_weights; DELETE FROM activity_daily; DELETE FROM activity_sessions; DELETE FROM ai_messages; DELETE FROM water_entries; DELETE FROM water_cache; DELETE FROM pending_water; DELETE FROM preferences;'
     );
   });
 }

@@ -33,13 +33,18 @@ import {
 } from '@/features/export/exportService';
 import { syncHealthConnect } from '@/features/health-connect/weightSync';
 import {
+  NO_HYDRATION_PERMISSIONS,
   getActivityPermissionState,
   getHealthConnectStatus,
+  getHydrationPermissionState,
   hasActivityAccess,
+  hasHydrationAccess,
   openHealthConnectSettings,
   requestActivityPermissions,
+  requestHydrationPermissions,
   requestWeightPermissions,
   type ActivityPermissionState,
+  type HydrationPermissionState,
 } from '@/features/health-connect/healthConnectPermissions';
 import {
   getReminderPermission,
@@ -64,6 +69,11 @@ import type {
 } from '@/features/settings/types';
 import type { WeightEntry } from '@/features/weight/types';
 import { getWeightRepository } from '@/features/weight/weightRepository';
+import {
+  WATER_TARGET_PRESETS_ML,
+  formatVolume,
+} from '@/features/water/waterCalculations';
+import { getWaterRepository } from '@/features/water/waterRepository';
 
 const UNITS: WeightUnit[] = ['kg', 'lb'];
 const REPEATS: ReminderRepeat[] = ['daily', 'weekly'];
@@ -76,6 +86,7 @@ const REPOSITORY_URL = 'https://github.com/PrasanthPradeep/heft';
 export default function SettingsScreen() {
   const { preferences, updatePreferences } = usePreferences();
   const repository = getWeightRepository(preferences.storageMode);
+  const waterRepository = getWaterRepository(preferences.storageMode);
   const isHealthConnect = preferences.storageMode === 'health-connect';
   const appVersion = Constants.expoConfig?.version;
 
@@ -91,22 +102,27 @@ export default function SettingsScreen() {
     canReadExercise: false,
   });
   const [activitySteps7d, setActivitySteps7d] = useState<number | null>(null);
+  const [hydrationAccess, setHydrationAccess] =
+    useState<HydrationPermissionState>(NO_HYDRATION_PERMISSIONS);
 
   const load = useCallback(async () => {
-    const [rows, syncedAt, access, activityDays, permission] = await Promise.all([
-      repository.listWeights(),
-      loadLastSyncedAt(),
-      getActivityPermissionState(),
-      loadDailyActivity(),
-      // Re-read on every focus, since it can change in system settings while
-      // Heft sits in the background.
-      getReminderPermission(),
-    ]);
+    const [rows, syncedAt, access, activityDays, permission, hydration] =
+      await Promise.all([
+        repository.listWeights(),
+        loadLastSyncedAt(),
+        getActivityPermissionState(),
+        loadDailyActivity(),
+        // Re-read on every focus, since it can change in system settings while
+        // Heft sits in the background.
+        getReminderPermission(),
+        getHydrationPermissionState(),
+      ]);
     setEntries(rows);
     setLastSyncedAt(syncedAt);
     setActivityAccess(access);
     setActivitySteps7d(summarizeActivity(activityDays).averageSteps7d);
     setReminderPermission(permission);
+    setHydrationAccess(hydration);
   }, [repository]);
 
   useFocusEffect(
@@ -178,19 +194,33 @@ export default function SettingsScreen() {
       await load();
       if (result.status === 'skipped') {
         Alert.alert('Nothing to sync', 'Health Connect is not ready right now.');
-      } else if (result.failed > 0) {
+      } else if (result.failed > 0 || result.waterFailed > 0) {
         Alert.alert(
           'Partly synced',
-          `${result.written} uploaded, ${result.failed} still waiting.`
+          `${result.written + result.waterWritten} saved, ${
+            result.failed + result.waterFailed
+          } still waiting.`
         );
       } else {
-        const activity =
-          result.activityDays > 0
-            ? `, ${result.activityDays} activity day${result.activityDays === 1 ? '' : 's'}`
-            : '';
+        const bits: string[] = [];
+        if (result.written > 0) bits.push(`${result.written} weight uploaded`);
+        if (result.waterWritten > 0) {
+          bits.push(`${result.waterWritten} water uploaded`);
+        }
+        if (result.imported > 0) bits.push(`${result.imported} weight read`);
+        if (result.waterImported > 0) {
+          bits.push(`${result.waterImported} water read`);
+        }
+        if (result.activityDays > 0) {
+          bits.push(
+            `${result.activityDays} activity day${
+              result.activityDays === 1 ? '' : 's'
+            }`
+          );
+        }
         Alert.alert(
           'Synced',
-          `${result.written} uploaded, ${result.imported} read${activity}.`
+          bits.length > 0 ? bits.join(' · ') : 'Everything is up to date.'
         );
       }
     } finally {
@@ -207,6 +237,25 @@ export default function SettingsScreen() {
         Alert.alert(
           'No activity data',
           'Heft needs read access to steps and exercise to show Google Fit data. You can grant it in Health Connect.'
+        );
+        return;
+      }
+      await syncHealthConnect();
+      await load();
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function connectHydration() {
+    setBusy(true);
+    try {
+      const access = await requestHydrationPermissions();
+      setHydrationAccess(access);
+      if (!hasHydrationAccess(access)) {
+        Alert.alert(
+          'No water access',
+          'Heft needs access to hydration in Health Connect to sync water. You can grant it in Health Connect.'
         );
         return;
       }
@@ -283,10 +332,10 @@ export default function SettingsScreen() {
 
   function confirmClear() {
     Alert.alert(
-      'Delete all measurements?',
+      'Delete all data?',
       isHealthConnect
-        ? 'This removes the readings Heft wrote to Health Connect and clears the local cache. Readings saved by other apps are not affected. This cannot be undone.'
-        : 'This removes every reading from Heft. It cannot be undone.',
+        ? 'This removes the weight and water entries Heft wrote to Health Connect and clears the local cache. Records saved by other apps are not affected. This cannot be undone.'
+        : 'This removes every weight and water entry from Heft. It cannot be undone.',
       [
         { text: 'Cancel', style: 'cancel' },
         {
@@ -296,6 +345,7 @@ export default function SettingsScreen() {
             try {
               if (isHealthConnect) {
                 await repository.deleteAllWeights();
+                await waterRepository.deleteAllWater();
               } else {
                 await clearAllData();
               }
@@ -303,7 +353,7 @@ export default function SettingsScreen() {
             } catch {
               Alert.alert(
                 'Could not delete',
-                'Health Connect was unreachable, so nothing was removed. Try again.'
+                'Health Connect was unreachable, so not everything could be removed. Try again.'
               );
             }
           },
@@ -495,6 +545,32 @@ export default function SettingsScreen() {
                 />
               )}
             </Card>
+
+            <Label>Water in Health Connect</Label>
+            <Card style={styles.stack}>
+              <Text style={styles.cardText}>
+                {hasHydrationAccess(hydrationAccess)
+                  ? hydrationAccess.canWrite
+                    ? 'Water logged in Heft is written to Health Connect, and water logged by other apps is read back.'
+                    : 'Reading water from Health Connect. Writing is not allowed, so new entries stay on this device.'
+                  : 'Connect hydration to sync water with Health Connect. Until then, water stays on this device.'}
+              </Text>
+              {hasHydrationAccess(hydrationAccess) ? (
+                <Button
+                  label="Refresh water"
+                  variant="secondary"
+                  onPress={runSync}
+                  disabled={busy}
+                />
+              ) : (
+                <Button
+                  label={busy ? 'Please wait…' : 'Connect water data'}
+                  onPress={connectHydration}
+                  loading={busy}
+                  disabled={busy}
+                />
+              )}
+            </Card>
           </>
         ) : null}
 
@@ -665,6 +741,31 @@ export default function SettingsScreen() {
           </Description>
         </Card>
 
+        <Label>Water goal</Label>
+        <View style={styles.unitRow}>
+          {WATER_TARGET_PRESETS_ML.map((ml) => {
+            const selected = preferences.waterTargetMl === ml;
+            return (
+              <Pressable
+                key={ml}
+                onPress={() => updatePreferences({ waterTargetMl: ml })}
+                style={[
+                  styles.unit,
+                  styles.goalChip,
+                  selected && styles.unitSelected,
+                ]}>
+                <Text
+                  style={[
+                    styles.unitText,
+                    selected && styles.unitTextSelected,
+                  ]}>
+                  {formatVolume(ml)}
+                </Text>
+              </Pressable>
+            );
+          })}
+        </View>
+
         {reminderNotice}
 
         {activePicker ? (
@@ -730,13 +831,13 @@ export default function SettingsScreen() {
         <Card style={styles.stack}>
           <Text style={styles.cardText}>
             Heft has no account and no server of ours. In local mode your
-            measurements stay on this device; in Health Connect mode they are read
-            from and written to the Android Health Connect app under your control.
-            The only network request Heft makes is the update check, which carries
-            nothing you entered.
+            measurements and water entries stay on this device; in Health
+            Connect mode they are read from and written to the Android Health
+            Connect app under your control. The only network request Heft makes
+            is the update check, which carries nothing you entered.
           </Text>
           <Button
-            label="Delete all measurements"
+            label="Delete all data"
             variant="danger"
             onPress={confirmClear}
           />
@@ -771,6 +872,9 @@ const styles = StyleSheet.create({
   cardTitle: { fontSize: 16, fontWeight: '700', color: Colors.text },
   cardText: { color: Colors.textSecondary, lineHeight: 21, flexShrink: 1 },
   unitRow: { flexDirection: 'row', gap: Spacing.two },
+  // Four goal chips share one row, so they need less inner padding than the
+  // two-chip unit row to keep "2.5 L" on one line.
+  goalChip: { paddingHorizontal: Spacing.two },
   unit: {
     flex: 1,
     borderWidth: 1.5,

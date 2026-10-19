@@ -25,6 +25,16 @@ export const ACTIVITY_PERMISSIONS: Permission[] = [
   { accessType: 'read', recordType: 'ExerciseSession' },
 ];
 
+/**
+ * Hydration is optional and independent of the weight sync. Read access imports
+ * water logged by other apps; write access puts Heft's own entries into Health
+ * Connect. Both are requested only when the user connects water from Settings.
+ */
+export const HYDRATION_PERMISSIONS: Permission[] = [
+  { accessType: 'read', recordType: 'Hydration' },
+  { accessType: 'write', recordType: 'Hydration' },
+];
+
 export type HealthConnectStatus =
   | 'available'
   | 'update-required'
@@ -180,6 +190,54 @@ export async function requestActivityPermissions(): Promise<ActivityPermissionSt
   }
 
   return getActivityPermissionState();
+}
+
+export type HydrationPermissionState = {
+  canRead: boolean;
+  canWrite: boolean;
+};
+
+export const NO_HYDRATION_PERMISSIONS: HydrationPermissionState = {
+  canRead: false,
+  canWrite: false,
+};
+
+export function hasHydrationAccess(state: HydrationPermissionState): boolean {
+  return state.canRead || state.canWrite;
+}
+
+/** Reads the currently granted hydration permissions. */
+export async function getHydrationPermissionState(): Promise<HydrationPermissionState> {
+  if (!(await ensureHealthConnectReady())) return NO_HYDRATION_PERMISSIONS;
+
+  try {
+    const granted = await getGrantedPermissions();
+    const has = (accessType: 'read' | 'write') =>
+      granted.some(
+        (permission) =>
+          permission.accessType === accessType &&
+          permission.recordType === 'Hydration'
+      );
+    return { canRead: has('read'), canWrite: has('write') };
+  } catch {
+    return NO_HYDRATION_PERMISSIONS;
+  }
+}
+
+/**
+ * Requests hydration access. Called only when the user connects water from
+ * Settings, so the rest of the app never asks for it implicitly.
+ */
+export async function requestHydrationPermissions(): Promise<HydrationPermissionState> {
+  if (!(await ensureHealthConnectReady())) return NO_HYDRATION_PERMISSIONS;
+
+  try {
+    await requestPermission(HYDRATION_PERMISSIONS);
+  } catch {
+    // Fall through and report whatever was actually granted.
+  }
+
+  return getHydrationPermissionState();
 }
 
 export { openHealthConnectSettings };

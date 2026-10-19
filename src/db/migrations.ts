@@ -183,6 +183,56 @@ export const MIGRATIONS: Migration[] = [
       `);
     },
   },
+  {
+    version: 6,
+    up: async (db) => {
+      await db.execAsync(`
+        -- Water intake, mirroring the weight tables: water_entries is
+        -- authoritative in local-only mode, water_cache is a disposable mirror
+        -- of Health Connect, and pending_water holds writes that could not be
+        -- sent yet. A single entry is capped at 10 L, which is far beyond any
+        -- plausible glass or bottle and keeps bad input out of the totals.
+        CREATE TABLE IF NOT EXISTS water_entries (
+          id TEXT PRIMARY KEY NOT NULL,
+          volume_ml REAL NOT NULL CHECK (volume_ml > 0 AND volume_ml <= 10000),
+          logged_at TEXT NOT NULL,
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL
+        );
+
+        CREATE INDEX IF NOT EXISTS water_entries_logged_at_idx
+          ON water_entries (logged_at DESC);
+
+        CREATE TABLE IF NOT EXISTS water_cache (
+          external_id TEXT PRIMARY KEY NOT NULL,
+          client_record_id TEXT,
+          volume_ml REAL NOT NULL CHECK (volume_ml > 0 AND volume_ml <= 10000),
+          logged_at TEXT NOT NULL,
+          source_package TEXT,
+          recording_method INTEGER,
+          updated_at TEXT NOT NULL
+        );
+
+        CREATE INDEX IF NOT EXISTS water_cache_logged_at_idx
+          ON water_cache (logged_at DESC);
+
+        CREATE UNIQUE INDEX IF NOT EXISTS water_cache_client_record_idx
+          ON water_cache (client_record_id)
+          WHERE client_record_id IS NOT NULL;
+
+        CREATE TABLE IF NOT EXISTS pending_water (
+          id TEXT PRIMARY KEY NOT NULL,
+          volume_ml REAL NOT NULL CHECK (volume_ml > 0 AND volume_ml <= 10000),
+          logged_at TEXT NOT NULL,
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL
+        );
+
+        CREATE INDEX IF NOT EXISTS pending_water_created_at_idx
+          ON pending_water (created_at ASC);
+      `);
+    },
+  },
 ];
 
 /**

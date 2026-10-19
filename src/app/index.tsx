@@ -13,9 +13,26 @@ import {
 import { Button, Card, Screen } from '@/components/ui';
 import { Colors, Radius, Spacing } from '@/constants/theme';
 import { formatDateTime, formatWeight } from '@/lib/format';
+import { localDayKey } from '@/features/activity/activityCalculations';
 import { syncHealthConnect } from '@/features/health-connect/weightSync';
+import {
+  getHydrationPermissionState,
+  hasHydrationAccess,
+  NO_HYDRATION_PERMISSIONS,
+  type HydrationPermissionState,
+} from '@/features/health-connect/healthConnectPermissions';
 import { usePreferences } from '@/features/settings/preferences';
 import { shouldRemindWeighIn } from '@/features/analytics/trendCalculations';
+import {
+  BOTTLE_ML,
+  GLASS_ML,
+  entriesForDay,
+  formatVolume,
+  progressRatio,
+  summarizeWater,
+} from '@/features/water/waterCalculations';
+import { getWaterRepository } from '@/features/water/waterRepository';
+import type { WaterEntry } from '@/features/water/types';
 import type { WeightEntry } from '@/features/weight/types';
 import { getWeightRepository } from '@/features/weight/weightRepository';
 
@@ -27,22 +44,35 @@ export default function HomeScreen() {
   const unit = preferences.weightUnit;
 
   const [entries, setEntries] = useState<WeightEntry[]>([]);
+  const [water, setWater] = useState<WaterEntry[]>([]);
+  const [hydrationAccess, setHydrationAccess] =
+    useState<HydrationPermissionState>(NO_HYDRATION_PERMISSIONS);
+  const [waterBusy, setWaterBusy] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [syncing, setSyncing] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const repository = getWeightRepository(preferences.storageMode);
+  const waterRepository = getWaterRepository(preferences.storageMode);
 
   const load = useCallback(async () => {
-    const rows = await repository.listWeights();
+    const [rows, waterRows, access] = await Promise.all([
+      repository.listWeights(),
+      waterRepository.listWater(),
+      isHealthConnect
+        ? getHydrationPermissionState()
+        : Promise.resolve(NO_HYDRATION_PERMISSIONS),
+    ]);
     setEntries(rows);
+    setWater(waterRows);
+    setHydrationAccess(access);
     setError(null);
-  }, [repository]);
+  }, [repository, waterRepository, isHealthConnect]);
 
   useFocusEffect(
     useCallback(() => {
       load().catch(() => {
-        setError('Could not load your measurements.');
+        setError('Could not load your data.');
       });
     }, [load])
   );
@@ -57,7 +87,7 @@ export default function HomeScreen() {
       }
       await load();
     } catch {
-      setError('Could not refresh your measurements.');
+      setError('Could not refresh your data.');
     } finally {
       setRefreshing(false);
     }
@@ -81,15 +111,26 @@ export default function HomeScreen() {
           (result.reason && messages[result.reason]) ??
             'Health Connect is not ready right now.'
         );
-      } else if (result.failed > 0) {
+      } else if (result.failed > 0 || result.waterFailed > 0) {
         Alert.alert(
           'Partly synced',
-          `${result.written} saved, ${result.failed} still waiting. Heft will retry later.`
+          `${result.written + result.waterWritten} saved, ${
+            result.failed + result.waterFailed
+          } still waiting. Heft will retry later.`
         );
       } else {
+        const bits: string[] = [];
+        if (result.written > 0) bits.push(`${result.written} weight uploaded`);
+        if (result.waterWritten > 0) {
+          bits.push(`${result.waterWritten} water uploaded`);
+        }
+        if (result.imported > 0) bits.push(`${result.imported} weight read`);
+        if (result.waterImported > 0) {
+          bits.push(`${result.waterImported} water read`);
+        }
         Alert.alert(
           'Synced',
-          `${result.written} uploaded, ${result.imported} read from Health Connect.`
+          bits.length > 0 ? bits.join(' · ') : 'Everything is up to date.'
         );
       }
     } finally {
@@ -97,10 +138,49 @@ export default function HomeScreen() {
     }
   }
 
+  async function addWater(volumeMl: number) {
+    setWaterBusy(true);
+    try {
+      await waterRepository.addWater({ volumeMl });
+      await load();
+    } catch (error) {
+      Alert.alert(
+        'Could not save',
+        error instanceof Error ? error.message : 'Try again.'
+      );
+    } finally {
+      setWaterBusy(false);
+    }
+  }
+
+  async function undoWater(id: string) {
+    setWaterBusy(true);
+    try {
+      await waterRepository.deleteWater(id);
+      await load();
+    } catch (error) {
+      Alert.alert(
+        'Could not remove',
+        error instanceof Error ? error.message : 'Try again.'
+      );
+    } finally {
+      setWaterBusy(false);
+    }
+  }
+
   const latest = entries[0] ?? null;
   const pendingCount = entries.filter((entry) => entry.pending).length;
   const showReminder = shouldRemindWeighIn(entries, preferences);
   const recent = entries.slice(0, RECENT_LIMIT);
+
+  const today = localDayKey(new Date());
+  const waterSummary = summarizeWater(water);
+  // Entries arrive newest-first, so the first owned one today is the last thing
+  // the user added and the only sensible target for Undo.
+  const lastWaterToday = entriesForDay(water, today).find(
+    (entry) => entry.owned
+  );
+  const pendingWater = water.filter((entry) => entry.pending).length;
 
   return (
     <Screen edges={['left', 'right']}>
@@ -154,6 +234,93 @@ export default function HomeScreen() {
             You have not logged a weight today. Add one when you get a moment.
           </Text>
         ) : null}
+
+        <Card style={styles.waterCard}>
+          <View style={styles.waterHeader}>
+            <View style={styles.waterHeading}>
+              <Text style={styles.waterTitle}>Water</Text>
+              <Text style={styles.waterMeta}>
+                Goal {formatVolume(preferences.waterTargetMl)}
+              </Text>
+            </View>
+            <Text style={styles.waterValue}>
+              {formatVolume(waterSummary.todayMl)}
+            </Text>
+          </View>
+
+          <View
+            accessibilityRole="progressbar"
+            accessibilityLabel="Water progress today"
+            accessibilityValue={{
+              min: 0,
+              max: preferences.waterTargetMl,
+              now: Math.min(waterSummary.todayMl, preferences.waterTargetMl),
+            }}
+            style={styles.waterTrack}>
+            <View
+              style={[
+                styles.waterFill,
+                {
+                  width: `${Math.round(
+                    progressRatio(
+                      waterSummary.todayMl,
+                      preferences.waterTargetMl
+                    ) * 100
+                  )}%`,
+                },
+              ]}
+            />
+          </View>
+
+          <View style={styles.waterActions}>
+            <Button
+              label={`+${GLASS_ML} ml`}
+              variant="secondary"
+              onPress={() => addWater(GLASS_ML)}
+              disabled={waterBusy}
+              style={styles.flex}
+            />
+            <Button
+              label={`+${BOTTLE_ML} ml`}
+              variant="secondary"
+              onPress={() => addWater(BOTTLE_ML)}
+              disabled={waterBusy}
+              style={styles.flex}
+            />
+          </View>
+
+          <View style={styles.waterFooter}>
+            <Text style={styles.waterHint}>
+              {waterSummary.averageMl7d !== null
+                ? `7-day average ${formatVolume(waterSummary.averageMl7d)}`
+                : 'No water logged yet'}
+            </Text>
+            {lastWaterToday ? (
+              <Text
+                accessibilityRole="button"
+                accessibilityLabel="Remove the last water entry"
+                style={styles.waterUndo}
+                onPress={() => undoWater(lastWaterToday.id)}>
+                Undo
+              </Text>
+            ) : null}
+          </View>
+
+          {isHealthConnect && !hydrationAccess.canWrite ? (
+            <Text style={styles.waterHint}>
+              {hasHydrationAccess(hydrationAccess)
+                ? 'Health Connect write access is off, so new entries stay on this device.'
+                : 'Water stays on this device until you connect it in Settings.'}
+            </Text>
+          ) : null}
+
+          {isHealthConnect && hydrationAccess.canWrite && pendingWater > 0 ? (
+            <Text style={styles.waterHint}>
+              {pendingWater} water {pendingWater === 1 ? 'entry' : 'entries'}{' '}
+              waiting to sync.
+            </Text>
+          ) : null}
+        </Card>
 
         {isHealthConnect ? (
           <Card style={styles.syncCard}>
@@ -285,6 +452,40 @@ const styles = StyleSheet.create({
     gap: Spacing.two,
   },
   flex: { flex: 1 },
+  waterCard: { gap: Spacing.two },
+  waterHeader: {
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    justifyContent: 'space-between',
+    gap: Spacing.two,
+  },
+  waterHeading: { gap: 2 },
+  waterTitle: { fontSize: 16, fontWeight: '700', color: Colors.text },
+  waterMeta: { color: Colors.textSecondary, fontSize: 14 },
+  waterValue: { fontSize: 28, fontWeight: '800', color: Colors.brand },
+  waterTrack: {
+    height: 8,
+    borderRadius: Radius.pill,
+    backgroundColor: Colors.brandTint,
+    overflow: 'hidden',
+  },
+  waterFill: {
+    height: '100%',
+    borderRadius: Radius.pill,
+    backgroundColor: Colors.brand,
+  },
+  waterActions: {
+    flexDirection: 'row',
+    gap: Spacing.two,
+  },
+  waterFooter: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: Spacing.two,
+  },
+  waterHint: { color: Colors.textSecondary, fontSize: 13, lineHeight: 19 },
+  waterUndo: { color: Colors.brand, fontWeight: '700', fontSize: 13 },
   reminder: {
     color: Colors.warning,
     backgroundColor: Colors.warningTint,

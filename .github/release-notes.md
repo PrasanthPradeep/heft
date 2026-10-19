@@ -1,4 +1,4 @@
-Offline-first weight tracking for Android. No account, no server, no subscription.
+Offline-first weight and water tracking for Android. No account, no server, no subscription.
 
 ## Install
 
@@ -17,10 +17,11 @@ Offline-first weight tracking for Android. No account, no server, no subscriptio
 ## What's inside
 
 - **Latest weight, insights and history** — 30 and 90 day change, plus a chart.
+- **Water log** — one-tap +250 / +500 ml adds, a daily goal and a progress bar. In Health Connect mode Heft writes its own water entries and reads the ones other apps saved.
 - **Reminders** for weigh-ins and water. Off by default; turning one on is the only time Heft asks for the notification permission, and the alerts are scheduled on the device.
 - **Export and import** readings as CSV or JSON, through the system share sheet.
 - **Optional AI assistant**, off by default and only if you supply your own OpenAI key.
-- Only the readings Heft itself wrote are ever edited or deleted. Anything imported from Health Connect is left untouched.
+- Only records Heft itself wrote are ever edited or deleted. Anything imported from Health Connect is left untouched.
 
 ## Updates
 

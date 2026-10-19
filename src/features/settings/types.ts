@@ -1,4 +1,5 @@
 import type { AiMethod } from '@/features/ai/types';
+import { DEFAULT_WATER_TARGET_ML } from '@/features/water/waterCalculations';
 
 export type StorageMode = 'health-connect' | 'local';
 
@@ -24,6 +25,8 @@ export type AppPreferences = {
   waterStartHour: number;
   waterEndHour: number;
   waterIntervalHours: number;
+  /** Daily water target in millilitres, used by the dashboard progress bar. */
+  waterTargetMl: number;
   /** How the built-in assistant reaches a model. Off by default. */
   aiMethod: AiMethod;
   /** Selected model slug, shared by both connection methods. */
@@ -47,6 +50,7 @@ export const DEFAULT_PREFERENCES: AppPreferences = {
   waterStartHour: 9,
   waterEndHour: 21,
   waterIntervalHours: 2,
+  waterTargetMl: DEFAULT_WATER_TARGET_ML,
   aiMethod: 'none',
   aiModel: null,
   aiShareHealth: false,
@@ -166,6 +170,14 @@ export function coercePreferences(input: unknown): AppPreferences {
       1,
       12,
       DEFAULT_PREFERENCES.waterIntervalHours
+    ),
+    // Anything outside a plausible daily intake falls back rather than clamping:
+    // a corrupt 50 ml target would make the progress bar meaningless.
+    waterTargetMl: clampInt(
+      raw.waterTargetMl,
+      500,
+      5000,
+      DEFAULT_PREFERENCES.waterTargetMl
     ),
     aiMethod,
     aiModel,

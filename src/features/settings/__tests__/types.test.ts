@@ -24,6 +24,7 @@ describe('coercePreferences', () => {
         waterStartHour: 8,
         waterEndHour: 20,
         waterIntervalHours: 3,
+        waterTargetMl: 2500,
         aiMethod: 'chatgpt',
         aiModel: 'gpt-5',
         aiShareHealth: true,
@@ -42,6 +43,7 @@ describe('coercePreferences', () => {
       waterStartHour: 8,
       waterEndHour: 20,
       waterIntervalHours: 3,
+      waterTargetMl: 2500,
       aiMethod: 'chatgpt',
       aiModel: 'gpt-5',
       aiShareHealth: true,
@@ -119,5 +121,21 @@ describe('coercePreferences', () => {
     const coerced = coercePreferences({ waterStartHour: 22, waterEndHour: 6 });
     expect(coerced.waterStartHour).toBe(DEFAULT_PREFERENCES.waterStartHour);
     expect(coerced.waterEndHour).toBe(DEFAULT_PREFERENCES.waterEndHour);
+  });
+
+  it('keeps a plausible water target and rejects an implausible one', () => {
+    expect(coercePreferences({ waterTargetMl: 3000 }).waterTargetMl).toBe(3000);
+    expect(coercePreferences({ waterTargetMl: 0 }).waterTargetMl).toBe(
+      DEFAULT_PREFERENCES.waterTargetMl
+    );
+    expect(coercePreferences({ waterTargetMl: 50 }).waterTargetMl).toBe(
+      DEFAULT_PREFERENCES.waterTargetMl
+    );
+    expect(coercePreferences({ waterTargetMl: 50_000 }).waterTargetMl).toBe(
+      DEFAULT_PREFERENCES.waterTargetMl
+    );
+    expect(coercePreferences({ waterTargetMl: 'lots' }).waterTargetMl).toBe(
+      DEFAULT_PREFERENCES.waterTargetMl
+    );
   });
 });
