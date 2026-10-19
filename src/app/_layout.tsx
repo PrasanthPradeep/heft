@@ -28,7 +28,8 @@ function useOnboardingRedirect(ready: boolean, completed: boolean) {
 }
 
 /**
- * Runs the Health Connect sync once per app launch when that mode is active.
+ * Runs once after preferences load when Health Connect was already selected.
+ * New connections sync in their connection flow after persisting the mode.
  * Synchronisation failures are non-fatal; the UI reads whatever is cached.
  */
 function useLaunchSync(ready: boolean, storageMode: string) {
@@ -36,8 +37,8 @@ function useLaunchSync(ready: boolean, storageMode: string) {
 
   useEffect(() => {
     if (!ready || hasSynced.current) return;
-    if (storageMode !== 'health-connect') return;
     hasSynced.current = true;
+    if (storageMode !== 'health-connect') return;
     syncHealthConnect().catch(() => {
       // Ignore: a manual Sync now action is always available in Settings.
     });

@@ -4,6 +4,7 @@ import { ScrollView, StyleSheet, Text } from 'react-native';
 
 import { Button, Card, Description, Screen, Title } from '@/components/ui';
 import { Colors, Radius, Spacing } from '@/constants/theme';
+import { syncHealthConnect } from '@/features/health-connect/weightSync';
 import { usePreferences } from '@/features/settings/preferences';
 import type { StorageMode } from '@/features/settings/types';
 import {
@@ -26,6 +27,13 @@ export default function OnboardingScreen() {
 
   async function finish(mode: StorageMode) {
     await updatePreferences({ storageMode: mode, onboardingCompleted: true });
+    if (mode === 'health-connect') {
+      // Persist the selected mode before syncing; the startup effect may have
+      // already run while preferences still pointed at local storage.
+      await syncHealthConnect().catch(() => {
+        // Sync is best effort here. The user can retry from Settings.
+      });
+    }
     router.replace('/');
   }
 
