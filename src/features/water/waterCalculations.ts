@@ -48,6 +48,7 @@ export function validateLoggedAt(
 
 /** Compact human-readable volume: `750 ml` below a litre, `1.5 L` above. */
 export function formatVolume(ml: number): string {
+  if (ml <= 0) return '0 ml';
   if (!Number.isFinite(ml)) return '0 ml';
   if (ml < 1000) return `${Math.round(ml)} ml`;
   const litres = Math.round((ml / 1000) * 100) / 100;
