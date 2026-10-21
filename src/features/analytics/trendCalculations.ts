@@ -160,17 +160,30 @@ export function hasEntryOnDay(entries: WeightEntry[], day: Date): boolean {
 
 /**
  * Whether an in-app weigh-in reminder should be shown: reminders are enabled,
- * the scheduled time has passed, and nothing has been recorded today.
+ * today matches the chosen repeat, the scheduled time has passed, and nothing
+ * has been recorded today.
  */
 export function shouldRemindWeighIn(
   entries: WeightEntry[],
   preferences: Pick<
     AppPreferences,
-    'reminderEnabled' | 'reminderHour' | 'reminderMinute'
+    | 'reminderEnabled'
+    | 'reminderRepeat'
+    | 'reminderWeekday'
+    | 'reminderHour'
+    | 'reminderMinute'
   >,
   now: Date = new Date()
 ): boolean {
   if (!preferences.reminderEnabled) return false;
+
+  // Preferences use 1 = Sunday … 7 = Saturday; JS uses 0 = Sunday … 6 = Saturday.
+  if (
+    preferences.reminderRepeat === 'weekly' &&
+    now.getDay() + 1 !== preferences.reminderWeekday
+  ) {
+    return false;
+  }
 
   const scheduled = new Date(now);
   scheduled.setHours(preferences.reminderHour, preferences.reminderMinute, 0, 0);

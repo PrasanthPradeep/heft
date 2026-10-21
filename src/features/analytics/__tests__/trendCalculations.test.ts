@@ -133,7 +133,13 @@ describe('reminders', () => {
   });
 
   it('only reminds after the scheduled time and with nothing logged today', () => {
-    const prefs = { reminderEnabled: true, reminderHour: 7, reminderMinute: 0 };
+    const prefs = {
+      reminderEnabled: true,
+      reminderRepeat: 'daily' as const,
+      reminderWeekday: 2,
+      reminderHour: 7,
+      reminderMinute: 0,
+    };
     const after = new Date(2026, 2, 15, 8, 0);
     const before = new Date(2026, 2, 15, 6, 0);
     const todayEntry = entry(iso(2026, 3, 15, 7), 80);
@@ -144,5 +150,23 @@ describe('reminders', () => {
     expect(
       shouldRemindWeighIn([], { ...prefs, reminderEnabled: false }, after)
     ).toBe(false);
+  });
+
+  it('only shows a weekly reminder on the selected weekday', () => {
+    const prefs = {
+      reminderEnabled: true,
+      reminderRepeat: 'weekly' as const,
+      // 2026-03-15 is a Sunday, which is weekday 1.
+      reminderWeekday: 1,
+      reminderHour: 7,
+      reminderMinute: 0,
+    };
+    const sundayAfter = new Date(2026, 2, 15, 8, 0);
+    const mondayAfter = new Date(2026, 2, 16, 8, 0);
+    const sundayEntry = entry(iso(2026, 3, 15, 7), 80);
+
+    expect(shouldRemindWeighIn([], prefs, sundayAfter)).toBe(true);
+    expect(shouldRemindWeighIn([], prefs, mondayAfter)).toBe(false);
+    expect(shouldRemindWeighIn([sundayEntry], prefs, sundayAfter)).toBe(false);
   });
 });

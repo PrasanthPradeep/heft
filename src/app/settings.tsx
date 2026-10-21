@@ -657,8 +657,10 @@ export default function SettingsScreen() {
           ) : null}
 
           <Description>
-            Heft posts a notification at this time, and the dashboard banner
-            still reminds you if you have not logged a reading that day.
+            Heft posts a notification at this time. The dashboard banner follows
+            the same schedule: every day for a daily reminder, or only on the
+            selected day for a weekly one. It hides once you log a reading that
+            day.
           </Description>
         </Card>
 
