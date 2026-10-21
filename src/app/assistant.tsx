@@ -25,6 +25,7 @@ import { buildInstructions } from '@/features/ai/prompts';
 import { MarkdownText } from '@/features/ai/MarkdownText';
 import { describeAiError, type ChatMessage } from '@/features/ai/types';
 import { usePreferences } from '@/features/settings/preferences';
+import { formatDateTime } from '@/lib/format';
 import type { WeightEntry } from '@/features/weight/types';
 import { getWeightRepository } from '@/features/weight/weightRepository';
 
@@ -137,14 +138,23 @@ export default function AssistantScreen() {
 
     try {
       const instructions =
-        buildInstructions({ hasHealthContext: Boolean(healthContext) }) +
+        buildInstructions({
+          hasHealthContext: Boolean(healthContext),
+          now: new Date(),
+        }) +
         (healthContext
           ? `\n\nHealth data (shared with the user's consent):\n${healthContext}`
           : '');
 
       const turns: ChatTurn[] = conversation
         .filter((message) => message.content.trim().length > 0)
-        .map((message) => ({ role: message.role, content: message.content }));
+        .map((message) => ({
+          role: message.role,
+          content:
+            message.role === 'user'
+              ? `[${formatDateTime(message.createdAt)}] ${message.content}`
+              : message.content,
+        }));
 
       const answer = await streamChat({
         method: preferences.aiMethod,
@@ -254,8 +264,9 @@ export default function AssistantScreen() {
             <Card>
               <Text style={styles.emptyTitle}>Ask about your progress</Text>
               <Text style={styles.emptyBody}>
-                Try asking how your weight has changed this month, or for help
-                planning a realistic goal for the next six weeks.
+                Try asking how your weight has changed this month, for a meal
+                plan, or tell me what you ate and I&apos;ll estimate the calories
+                and macros and keep a running total for the day.
               </Text>
             </Card>
           }
