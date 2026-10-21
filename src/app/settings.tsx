@@ -23,6 +23,7 @@ import { Colors, Radius, Spacing } from '@/constants/theme';
 import { clearAllData } from '@/db/database';
 import { formatDateTime } from '@/lib/format';
 import { AiSettingsCard } from '@/features/ai/AiSettingsCard';
+import { clearAllChats } from '@/features/ai/chatStore';
 import {
   detectFormat,
   entriesToCsv,
@@ -316,8 +317,8 @@ export default function SettingsScreen() {
     Alert.alert(
       'Delete all data?',
       isHealthConnect
-        ? 'This removes the weight and water entries Heft wrote to Health Connect and clears the local cache. Records saved by other apps are not affected. This cannot be undone.'
-        : 'This removes every weight and water entry from Heft. It cannot be undone.',
+        ? 'This removes the weight and water entries Heft wrote to Health Connect, clears the local cache, and deletes assistant chat history. Records saved by other apps are not affected. This cannot be undone.'
+        : 'This removes every weight and water entry, plus all assistant chat history, from Heft. It cannot be undone.',
       [
         { text: 'Cancel', style: 'cancel' },
         {
@@ -325,6 +326,9 @@ export default function SettingsScreen() {
           style: 'destructive',
           onPress: async () => {
             try {
+              // Chat history is local user data in both storage modes, so it is
+              // cleared even when Health Connect is authoritative for health data.
+              await clearAllChats();
               if (isHealthConnect) {
                 await repository.deleteAllWeights();
                 await waterRepository.deleteAllWater();
@@ -336,7 +340,7 @@ export default function SettingsScreen() {
             } catch {
               Alert.alert(
                 'Could not delete',
-                'Health Connect was unreachable, so not everything could be removed. Try again.'
+                'Some data could not be removed. Please try again.'
               );
             }
           },

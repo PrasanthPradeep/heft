@@ -1,11 +1,15 @@
 import { router, useFocusEffect } from 'expo-router';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
+  ActivityIndicator,
+  Alert,
   Dimensions,
   FlatList,
   Keyboard,
   KeyboardAvoidingView,
+  Modal,
   Platform,
+  Pressable,
   StyleSheet,
   Text,
   TextInput,
@@ -19,13 +23,34 @@ import { loadDailyActivity } from '@/features/activity/activityRepository';
 import { summarizeActivity } from '@/features/activity/activityCalculations';
 import type { ActivitySummary } from '@/features/activity/activityCalculations';
 import { streamChat, type ChatTurn } from '@/features/ai/aiClient';
-import { appendChatMessage, clearChatMessages, listChatMessages } from '@/features/ai/chatStore';
+import {
+  CHAT_HISTORY_PAGE_SIZE,
+  MAX_CHAT_HISTORY_BYTES,
+} from '@/features/ai/chatHistory';
+import {
+  appendChatMessage,
+  createChat,
+  deleteChat,
+  getChat,
+  getChatHistoryStats,
+  getOrCreateLatestChat,
+  listChatMessages,
+  listChats,
+} from '@/features/ai/chatStore';
 import { buildHealthContext } from '@/features/ai/healthContext';
 import { buildInstructions } from '@/features/ai/prompts';
 import { MarkdownText } from '@/features/ai/MarkdownText';
-import { describeAiError, type ChatMessage } from '@/features/ai/types';
+import {
+  describeAiError,
+  type ChatHistoryStats,
+  type ChatMessage,
+  type ChatThread,
+} from '@/features/ai/types';
 import { usePreferences } from '@/features/settings/preferences';
-import { formatDateTime } from '@/lib/format';
+import {
+  formatDateTime,
+  formatStorageSize,
+} from '@/lib/format';
 import type { WeightEntry } from '@/features/weight/types';
 import { getWeightRepository } from '@/features/weight/weightRepository';
 
@@ -33,7 +58,15 @@ export default function AssistantScreen() {
   const { preferences } = usePreferences();
   const repository = getWeightRepository(preferences.storageMode);
 
+  const [chatId, setChatId] = useState<string | null>(null);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [hasOlder, setHasOlder] = useState(false);
+  const [loadingOlder, setLoadingOlder] = useState(false);
+  const [chats, setChats] = useState<ChatThread[]>([]);
+  const [historyStats, setHistoryStats] = useState<ChatHistoryStats | null>(null);
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [historyError, setHistoryError] = useState<string | null>(null);
+  const [showHistory, setShowHistory] = useState(false);
   const [entries, setEntries] = useState<WeightEntry[]>([]);
   const [activity, setActivity] = useState<ActivitySummary | null>(null);
   const [input, setInput] = useState('');
@@ -46,6 +79,9 @@ export default function AssistantScreen() {
   const insets = useSafeAreaInsets();
   const listRef = useRef<FlatList<ChatMessage>>(null);
   const controllerRef = useRef<AbortController | null>(null);
+  const activeChatIdRef = useRef<string | null>(null);
+  const scrollToEndRef = useRef(true);
+  const creatingChatRef = useRef(false);
 
   /**
    * Android runs edge-to-edge, so the system ignores `adjustResize` and never
@@ -81,20 +117,41 @@ export default function AssistantScreen() {
     }
   }, [keyboardHeight]);
 
+  const loadChat = useCallback(async (id: string) => {
+    const page = await listChatMessages(id, CHAT_HISTORY_PAGE_SIZE);
+    activeChatIdRef.current = id;
+    setChatId(id);
+    setMessages(page.messages);
+    setHasOlder(page.hasMore);
+    setLoadingOlder(false);
+    setStreaming('');
+    setError(null);
+    setInput('');
+    scrollToEndRef.current = true;
+  }, []);
+
   const load = useCallback(async () => {
-    const [history, rows, activityDays] = await Promise.all([
-      listChatMessages(),
+    if (preferences.aiMethod === 'none') return;
+
+    const [rows, activityDays] = await Promise.all([
       repository.listWeights(),
       loadDailyActivity(),
     ]);
-    setMessages(history);
     setEntries(rows);
     setActivity(activityDays.length > 0 ? summarizeActivity(activityDays) : null);
-  }, [repository]);
+
+    // Keep the open chat across tab changes, but recover if the database was
+    // wiped from Settings while this screen was in the background.
+    const currentId = activeChatIdRef.current;
+    if (currentId && (await getChat(currentId))) return;
+
+    const latest = await getOrCreateLatestChat();
+    await loadChat(latest.id);
+  }, [loadChat, preferences.aiMethod, repository]);
 
   useFocusEffect(
     useCallback(() => {
-      load().catch(() => setError('Could not load the conversation.'));
+      load().catch(() => setError('Could not load the assistant.'));
       return () => {
         controllerRef.current?.abort();
       };
@@ -111,10 +168,145 @@ export default function AssistantScreen() {
       })
     : null;
 
+  async function openChat(id: string) {
+    Keyboard.dismiss();
+    controllerRef.current?.abort();
+    controllerRef.current = null;
+    setSending(false);
+    setStreaming('');
+    setShowHistory(false);
+
+    try {
+      await loadChat(id);
+    } catch {
+      setError('Could not open that conversation.');
+    }
+  }
+
+  async function startNewChat() {
+    if (creatingChatRef.current) return;
+
+    if (messages.length === 0 && activeChatIdRef.current) {
+      setShowHistory(false);
+      return;
+    }
+
+    creatingChatRef.current = true;
+    Keyboard.dismiss();
+    controllerRef.current?.abort();
+    controllerRef.current = null;
+    setSending(false);
+    setStreaming('');
+    setError(null);
+
+    try {
+      const chat = await createChat();
+      await loadChat(chat.id);
+      setShowHistory(false);
+    } catch {
+      setError('Could not start a new chat.');
+    } finally {
+      creatingChatRef.current = false;
+    }
+  }
+
+  async function refreshHistory() {
+    const [nextChats, nextStats] = await Promise.all([
+      listChats(),
+      getChatHistoryStats(),
+    ]);
+    setChats(nextChats);
+    setHistoryStats(nextStats);
+  }
+
+  async function openHistory() {
+    Keyboard.dismiss();
+    setShowHistory(true);
+    setHistoryLoading(true);
+    setHistoryError(null);
+    try {
+      await refreshHistory();
+    } catch {
+      setHistoryError('Could not load chat history.');
+    } finally {
+      setHistoryLoading(false);
+    }
+  }
+
+  async function removeChat(chat: ChatThread) {
+    try {
+      await deleteChat(chat.id);
+      const nextChats = await listChats();
+      setChats(nextChats);
+      setHistoryStats(await getChatHistoryStats());
+
+      if (chat.id === activeChatIdRef.current) {
+        if (nextChats.length > 0) {
+          await openChat(nextChats[0].id);
+        } else {
+          const replacement = await createChat();
+          await openChat(replacement.id);
+        }
+      }
+    } catch {
+      Alert.alert('Could not delete chat', 'Please try again.');
+    }
+  }
+
+  function confirmDeleteChat(chat: ChatThread) {
+    Alert.alert(
+      'Delete chat?',
+      `"${chat.title}" and all of its messages will be permanently removed from this device. This cannot be undone.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: () => {
+            void removeChat(chat);
+          },
+        },
+      ]
+    );
+  }
+
+  async function loadOlder() {
+    const targetChatId = chatId;
+    if (!targetChatId || !hasOlder || loadingOlder) return;
+
+    const oldest = messages[0];
+    if (!oldest) return;
+
+    setLoadingOlder(true);
+    scrollToEndRef.current = false;
+    try {
+      const page = await listChatMessages(
+        targetChatId,
+        CHAT_HISTORY_PAGE_SIZE,
+        oldest.id
+      );
+      if (activeChatIdRef.current !== targetChatId) return;
+      setMessages((previous) => [...page.messages, ...previous]);
+      setHasOlder(page.hasMore);
+    } catch {
+      if (activeChatIdRef.current === targetChatId) {
+        setError('Could not load earlier messages.');
+      }
+    } finally {
+      if (activeChatIdRef.current === targetChatId) {
+        setLoadingOlder(false);
+      }
+    }
+  }
+
   async function send() {
     const text = input.trim();
     if (!text || sending) return;
 
+    if (!chatId) {
+      setError('The conversation is still loading. Try again.');
+      return;
+    }
     if (preferences.aiMethod === 'none') {
       setError('Set up the assistant in Settings first.');
       return;
@@ -124,14 +316,32 @@ export default function AssistantScreen() {
       return;
     }
 
+    const targetChatId = chatId;
     setError(null);
     setInput('');
     setSending(true);
     setStreaming('');
+    scrollToEndRef.current = true;
 
-    const userMessage = await appendChatMessage('user', text);
+    let userMessage: ChatMessage;
+    try {
+      userMessage = await appendChatMessage(targetChatId, 'user', text);
+    } catch {
+      if (activeChatIdRef.current === targetChatId) {
+        setInput(text);
+        setSending(false);
+        setError('Could not save this message. Try again.');
+      }
+      return;
+    }
+
     const conversation = [...messages, userMessage];
-    setMessages(conversation);
+    if (activeChatIdRef.current === targetChatId) {
+      setMessages(conversation);
+    } else {
+      // The user switched chats while the message was being written.
+      return;
+    }
 
     const controller = new AbortController();
     controllerRef.current = controller;
@@ -161,32 +371,43 @@ export default function AssistantScreen() {
         model: preferences.aiModel,
         instructions,
         messages: turns,
-        onDelta: (delta) => setStreaming((previous) => previous + delta),
+        onDelta: (delta) => {
+          if (activeChatIdRef.current === targetChatId) {
+            setStreaming((previous) => previous + delta);
+          }
+        },
         signal: controller.signal,
       });
 
       if (!answer.trim()) {
-        setError('The assistant returned an empty reply. Try again.');
+        if (activeChatIdRef.current === targetChatId) {
+          setError('The assistant returned an empty reply. Try again.');
+        }
         return;
       }
 
-      const assistantMessage = await appendChatMessage('assistant', answer);
-      setMessages((previous) => [...previous, assistantMessage]);
+      // Only the completed answer is persisted, never individual stream chunks.
+      const assistantMessage = await appendChatMessage(
+        targetChatId,
+        'assistant',
+        answer
+      );
+      if (activeChatIdRef.current === targetChatId) {
+        setMessages((previous) => [...previous, assistantMessage]);
+      }
     } catch (cause) {
-      setError(describeAiError(cause));
+      if (!controller.signal.aborted && activeChatIdRef.current === targetChatId) {
+        setError(describeAiError(cause));
+      }
     } finally {
-      setStreaming('');
-      setSending(false);
-      controllerRef.current = null;
+      if (controllerRef.current === controller) {
+        controllerRef.current = null;
+      }
+      if (activeChatIdRef.current === targetChatId) {
+        setStreaming('');
+        setSending(false);
+      }
     }
-  }
-
-  async function newChat() {
-    controllerRef.current?.abort();
-    await clearChatMessages();
-    setMessages([]);
-    setStreaming('');
-    setError(null);
   }
 
   if (preferences.aiMethod === 'none') {
@@ -223,16 +444,19 @@ export default function AssistantScreen() {
         style={styles.flex}
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
         <View style={styles.toolbar}>
-          <Text style={styles.toolbarText}>
+          <Text style={styles.toolbarText} numberOfLines={1}>
             {preferences.aiModel ?? 'No model selected'}
           </Text>
           <View style={styles.toolbarActions}>
             <Text
               style={styles.toolbarLink}
               onPress={() => setShowPreview((value) => !value)}>
-              {showPreview ? 'Hide shared data' : 'Preview shared data'}
+              {showPreview ? 'Hide data' : 'Preview'}
             </Text>
-            <Text style={styles.toolbarLink} onPress={newChat}>
+            <Text style={styles.toolbarLink} onPress={() => void openHistory()}>
+              History
+            </Text>
+            <Text style={styles.toolbarLink} onPress={() => void startNewChat()}>
               New chat
             </Text>
           </View>
@@ -255,10 +479,26 @@ export default function AssistantScreen() {
         <FlatList
           ref={listRef}
           data={data}
-          keyExtractor={(item, index) => `${item.id}-${index}`}
+          keyExtractor={(item) => item.id}
           contentContainerStyle={styles.list}
-          onContentSizeChange={() =>
-            listRef.current?.scrollToEnd({ animated: true })
+          maintainVisibleContentPosition={{ minIndexForVisible: 0 }}
+          onContentSizeChange={() => {
+            if (scrollToEndRef.current) {
+              listRef.current?.scrollToEnd({ animated: false });
+            }
+          }}
+          ListHeaderComponent={
+            hasOlder ? (
+              <Pressable
+                accessibilityRole="button"
+                disabled={loadingOlder}
+                onPress={() => void loadOlder()}
+                style={styles.loadOlder}>
+                <Text style={styles.loadOlderText}>
+                  {loadingOlder ? 'Loading earlier messages…' : 'Load earlier messages'}
+                </Text>
+              </Pressable>
+            ) : null
           }
           ListEmptyComponent={
             <Card>
@@ -311,6 +551,95 @@ export default function AssistantScreen() {
           )}
         </View>
       </KeyboardAvoidingView>
+
+      <Modal
+        visible={showHistory}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setShowHistory(false)}>
+        <View style={styles.historyBackdrop}>
+          <View
+            style={[
+              styles.historySheet,
+              { paddingBottom: insets.bottom + Spacing.three },
+            ]}>
+            <View style={styles.historyHeader}>
+              <View style={styles.flex}>
+                <Text style={styles.historyTitle}>Chat history</Text>
+                <Text style={styles.historyMeta}>Saved on this device only.</Text>
+              </View>
+              <Text
+                style={styles.toolbarLink}
+                onPress={() => setShowHistory(false)}>
+                Close
+              </Text>
+            </View>
+
+            <Text style={styles.historyStorage}>
+              {historyStats
+                ? `${historyStats.chatCount} of ${historyStats.maxChats} chats · ${historyStats.messageCount} messages`
+                : 'Loading saved chats…'}
+            </Text>
+            <Text style={styles.historyMeta}>
+              Stored message text: {formatStorageSize(historyStats?.bytes ?? 0)} of{' '}
+              {formatStorageSize(MAX_CHAT_HISTORY_BYTES)}. Only completed message
+              text is saved. When a limit is reached, the oldest chats are removed
+              first.
+            </Text>
+
+            {historyError ? (
+              <Text style={styles.historyError}>{historyError}</Text>
+            ) : null}
+
+            {historyLoading ? (
+              <ActivityIndicator
+                color={Colors.brand}
+                style={styles.historyLoading}
+              />
+            ) : (
+              <FlatList
+                data={chats}
+                keyExtractor={(item) => item.id}
+                style={styles.historyList}
+                contentContainerStyle={styles.historyListContent}
+                ListEmptyComponent={
+                  <Text style={styles.historyEmpty}>No saved chats yet.</Text>
+                }
+                renderItem={({ item }) => {
+                  const active = item.id === chatId;
+                  return (
+                    <View
+                      style={[styles.chatRow, active && styles.chatRowActive]}>
+                      <Pressable
+                        accessibilityRole="button"
+                        onPress={() => void openChat(item.id)}
+                        style={styles.chatMain}>
+                        <Text style={styles.chatTitle} numberOfLines={1}>
+                          {item.title}
+                        </Text>
+                        <Text style={styles.chatMeta}>
+                          {active ? 'Current · ' : ''}
+                          {formatDateTime(item.updatedAt)} · {item.messageCount}{' '}
+                          {item.messageCount === 1 ? 'message' : 'messages'}
+                        </Text>
+                      </Pressable>
+                      <Pressable
+                        accessibilityRole="button"
+                        accessibilityLabel={`Delete ${item.title}`}
+                        onPress={() => confirmDeleteChat(item)}
+                        style={styles.chatDelete}>
+                        <Text style={styles.chatDeleteText}>Delete</Text>
+                      </Pressable>
+                    </View>
+                  );
+                }}
+              />
+            )}
+
+            <Button label="New chat" onPress={() => void startNewChat()} />
+          </View>
+        </View>
+      </Modal>
     </Screen>
   );
 }
@@ -329,8 +658,17 @@ const styles = StyleSheet.create({
     paddingVertical: Spacing.two,
     gap: Spacing.two,
   },
-  toolbarText: { color: Colors.textSecondary, fontWeight: '600', flexShrink: 1 },
-  toolbarActions: { flexDirection: 'row', gap: Spacing.three },
+  toolbarText: {
+    color: Colors.textSecondary,
+    fontWeight: '600',
+    flex: 1,
+  },
+  toolbarActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.two,
+    flexShrink: 0,
+  },
   toolbarLink: { color: Colors.brand, fontWeight: '700' },
   previewCard: { marginHorizontal: Spacing.three, gap: Spacing.one },
   previewTitle: { fontWeight: '700', color: Colors.text },
@@ -341,6 +679,8 @@ const styles = StyleSheet.create({
     fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
   },
   list: { padding: Spacing.three, gap: Spacing.two },
+  loadOlder: { alignItems: 'center', paddingVertical: Spacing.two },
+  loadOlderText: { color: Colors.brand, fontWeight: '700' },
   bubble: {
     maxWidth: '92%',
     borderRadius: Radius.lg,
@@ -390,4 +730,64 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.surface,
     color: Colors.text,
   },
+  historyBackdrop: {
+    flex: 1,
+    justifyContent: 'flex-end',
+    backgroundColor: 'rgba(0, 0, 0, 0.35)',
+  },
+  historySheet: {
+    maxHeight: '85%',
+    backgroundColor: Colors.background,
+    borderTopLeftRadius: Radius.lg,
+    borderTopRightRadius: Radius.lg,
+    padding: Spacing.three,
+    gap: Spacing.two,
+  },
+  historyHeader: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    gap: Spacing.two,
+  },
+  historyTitle: { fontSize: 22, fontWeight: '700', color: Colors.text },
+  historyMeta: { color: Colors.textSecondary, fontSize: 13, lineHeight: 19 },
+  historyStorage: { color: Colors.text, fontWeight: '700' },
+  historyError: {
+    color: Colors.danger,
+    backgroundColor: Colors.dangerTint,
+    borderRadius: Radius.sm,
+    padding: Spacing.two,
+    fontSize: 13,
+  },
+  historyLoading: { paddingVertical: Spacing.five },
+  historyList: { maxHeight: 420, flexShrink: 1 },
+  historyListContent: { gap: Spacing.two, paddingVertical: Spacing.one },
+  historyEmpty: {
+    color: Colors.textSecondary,
+    textAlign: 'center',
+    paddingVertical: Spacing.four,
+  },
+  chatRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: Colors.surface,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: Colors.border,
+    borderRadius: Radius.md,
+    paddingLeft: Spacing.three,
+  },
+  chatRowActive: {
+    borderColor: Colors.brand,
+    backgroundColor: Colors.brandTint,
+  },
+  chatMain: { flex: 1, gap: Spacing.one, paddingVertical: Spacing.two },
+  chatTitle: { color: Colors.text, fontWeight: '700' },
+  chatMeta: { color: Colors.textSecondary, fontSize: 12, lineHeight: 17 },
+  chatDelete: {
+    minHeight: 44,
+    justifyContent: 'center',
+    paddingHorizontal: Spacing.three,
+    paddingVertical: Spacing.two,
+  },
+  chatDeleteText: { color: Colors.danger, fontWeight: '700' },
 });

@@ -233,6 +233,81 @@ export const MIGRATIONS: Migration[] = [
       `);
     },
   },
+  {
+    version: 7,
+    up: async (db) => {
+      await db.withExclusiveTransactionAsync(async (txn) => {
+        await txn.execAsync(`
+          -- Assistant conversations. Messages live in ai_messages and point at
+          -- one chat through chat_id. The bytes column is the UTF-8 size of the
+          -- chat's message text, maintained on insert so retention never has to
+          -- scan every message body.
+          CREATE TABLE IF NOT EXISTS ai_chats (
+            id TEXT PRIMARY KEY NOT NULL,
+            title TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            bytes INTEGER NOT NULL DEFAULT 0
+          );
+
+          CREATE INDEX IF NOT EXISTS ai_chats_updated_at_idx
+            ON ai_chats (updated_at DESC);
+        `);
+
+        const columns = await txn.getAllAsync<{ name: string }>(
+          'PRAGMA table_info(ai_messages);'
+        );
+        if (!columns.some((column) => column.name === 'chat_id')) {
+          await txn.execAsync(
+            'ALTER TABLE ai_messages ADD COLUMN chat_id TEXT;'
+          );
+        }
+
+        const orphan = await txn.getFirstAsync<{ count: number }>(
+          'SELECT COUNT(*) AS count FROM ai_messages WHERE chat_id IS NULL;'
+        );
+        if (orphan && orphan.count > 0) {
+          const range = await txn.getFirstAsync<{
+            first: string | null;
+            last: string | null;
+          }>(
+            `SELECT MIN(created_at) AS first, MAX(created_at) AS last
+             FROM ai_messages
+             WHERE chat_id IS NULL;`
+          );
+          const createdAt = range?.first ?? new Date().toISOString();
+          const updatedAt = range?.last ?? createdAt;
+          const legacyId = 'legacy-chat';
+
+          await txn.runAsync(
+            `INSERT OR IGNORE INTO ai_chats
+               (id, title, created_at, updated_at, bytes)
+             VALUES (?, ?, ?, ?, 0)`,
+            legacyId,
+            'Previous conversation',
+            createdAt,
+            updatedAt
+          );
+          await txn.runAsync(
+            'UPDATE ai_messages SET chat_id = ? WHERE chat_id IS NULL;',
+            legacyId
+          );
+        }
+
+        await txn.execAsync(`
+          CREATE INDEX IF NOT EXISTS ai_messages_chat_id_idx
+            ON ai_messages (chat_id);
+
+          UPDATE ai_chats
+          SET bytes = (
+            SELECT COALESCE(SUM(LENGTH(CAST(m.content AS BLOB))), 0)
+            FROM ai_messages m
+            WHERE m.chat_id = ai_chats.id
+          );
+        `);
+      });
+    },
+  },
 ];
 
 /**

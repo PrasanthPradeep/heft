@@ -24,6 +24,30 @@ export type ChatMessage = {
   createdAt: string;
 };
 
+/** A locally saved conversation shown in the assistant history list. */
+export type ChatThread = {
+  id: string;
+  title: string;
+  createdAt: string;
+  updatedAt: string;
+  messageCount: number;
+};
+
+/** One page of a transcript, ordered oldest to newest. */
+export type ChatMessagePage = {
+  messages: ChatMessage[];
+  hasMore: boolean;
+};
+
+/** Current local transcript usage, shown in the history sheet. */
+export type ChatHistoryStats = {
+  chatCount: number;
+  messageCount: number;
+  bytes: number;
+  maxChats: number;
+  maxBytes: number;
+};
+
 /**
  * Persisted ChatGPT OAuth connection. Stored in the OS keystore, never in the
  * plain SQLite preferences blob.

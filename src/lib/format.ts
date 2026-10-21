@@ -73,3 +73,16 @@ export function formatSigned(value: number, digits = 1): string {
   const rounded = parseFloat(value.toFixed(digits));
   return `${rounded > 0 ? '+' : ''}${rounded}`;
 }
+
+/** Human-readable local storage size, e.g. `512 B`, `38 KB`, `4.2 MB`. */
+export function formatStorageSize(bytes: number): string {
+  if (!Number.isFinite(bytes) || bytes <= 0) return '0 KB';
+
+  if (bytes < 1024) return `${Math.max(1, Math.round(bytes))} B`;
+
+  const kb = bytes / 1024;
+  if (kb < 1024) return `${Math.round(kb)} KB`;
+
+  const mb = kb / 1024;
+  return `${mb < 10 ? mb.toFixed(1) : Math.round(mb)} MB`;
+}
