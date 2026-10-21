@@ -308,6 +308,20 @@ export const MIGRATIONS: Migration[] = [
       });
     },
   },
+  {
+    version: 8,
+    up: async (db) => {
+      await db.runAsync(`
+        -- A chat with no messages is not useful history. Earlier versions
+        -- created the row before the first message; new versions keep it in
+        -- memory until then, so remove any leftovers.
+        DELETE FROM ai_chats
+        WHERE NOT EXISTS (
+          SELECT 1 FROM ai_messages m WHERE m.chat_id = ai_chats.id
+        );
+      `);
+    },
+  },
 ];
 
 /**

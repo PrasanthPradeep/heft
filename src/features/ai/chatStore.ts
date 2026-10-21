@@ -43,6 +43,16 @@ type HistoryTotals = {
   bytes: number;
 };
 
+const VISIBLE_CHAT = `
+  EXISTS (SELECT 1 FROM ai_messages visible WHERE visible.chat_id = c.id)
+`;
+
+/** A chat saved in the database, or an in-memory draft with no messages yet. */
+export type LatestChat = {
+  chat: ChatThread;
+  isDraft: boolean;
+};
+
 function rowToMessage(row: MessageRow): ChatMessage {
   return {
     id: row.id,
@@ -72,13 +82,16 @@ const CHAT_SELECT = `
   FROM ai_chats c
 `;
 
-/** Saved conversations, most recently active first. */
+/** Saved conversations, most recently active first. Empty chats are hidden. */
 export async function listChats(
   limit = MAX_CHAT_HISTORY_CHATS
 ): Promise<ChatThread[]> {
   const db = await getDatabase();
   const rows = await db.getAllAsync<ChatRow>(
-    `${CHAT_SELECT} ORDER BY c.updated_at DESC, c.created_at DESC LIMIT ?`,
+    `${CHAT_SELECT}
+     WHERE ${VISIBLE_CHAT}
+     ORDER BY c.updated_at DESC, c.created_at DESC
+     LIMIT ?`,
     Math.max(1, Math.floor(limit))
   );
   return rows.map(rowToChat);
@@ -87,47 +100,36 @@ export async function listChats(
 export async function getChat(id: string): Promise<ChatThread | null> {
   const db = await getDatabase();
   const row = await db.getFirstAsync<ChatRow>(
-    `${CHAT_SELECT} WHERE c.id = ?`,
+    `${CHAT_SELECT}
+     WHERE c.id = ? AND ${VISIBLE_CHAT}`,
     id
   );
   return row ? rowToChat(row) : null;
 }
 
-/** Creates an empty conversation and enforces the retention limits. */
-export async function createChat(
-  title = DEFAULT_CHAT_TITLE
-): Promise<ChatThread> {
-  const db = await getDatabase();
+/**
+ * Builds a chat that exists only on screen. Nothing is written to the database
+ * until the first message is sent, so empty chats never reach history.
+ */
+export function createDraftChat(title = DEFAULT_CHAT_TITLE): ChatThread {
   const now = new Date().toISOString();
-  const chat: ChatThread = {
+  return {
     id: Crypto.randomUUID(),
     title,
     createdAt: now,
     updatedAt: now,
     messageCount: 0,
   };
-
-  await db.runAsync(
-    'INSERT INTO ai_chats (id, title, created_at, updated_at) VALUES (?, ?, ?, ?)',
-    chat.id,
-    chat.title,
-    chat.createdAt,
-    chat.updatedAt
-  );
-
-  // A failed cleanup must not make a successfully created chat look failed.
-  await trimChatHistory(chat.id).catch(() => undefined);
-  return chat;
 }
 
-/** Returns the most recently active chat, or creates the first one. */
-export async function getOrCreateLatestChat(): Promise<ChatThread> {
+/** Returns the latest saved chat, or a fresh in-memory draft. */
+export async function getOrCreateLatestChat(): Promise<LatestChat> {
   const chats = await listChats(1);
   if (chats.length > 0) {
     await trimChatHistory(chats[0].id).catch(() => undefined);
-    return chats[0];
+    return { chat: chats[0], isDraft: false };
   }
-  return createChat();
+  return { chat: createDraftChat(), isDraft: true };
 }
 
 /**
@@ -194,7 +196,22 @@ export async function appendChatMessage(
       'SELECT title FROM ai_chats WHERE id = ?',
       chatId
     );
-    if (!chat) throw new Error('Chat not found.');
+
+    if (!chat) {
+      // A draft becomes real on its first user message. An assistant-only
+      // transcript would be a ghost chat, so refuse that case.
+      if (role !== 'user') throw new Error('Chat not found.');
+
+      await txn.runAsync(
+        `INSERT INTO ai_chats
+           (id, title, created_at, updated_at, bytes)
+         VALUES (?, ?, ?, ?, 0)`,
+        chatId,
+        deriveChatTitle(content),
+        message.createdAt,
+        message.createdAt
+      );
+    }
 
     await txn.runAsync(
       `INSERT INTO ai_messages (id, chat_id, role, content, created_at)
@@ -218,7 +235,7 @@ export async function appendChatMessage(
       chatId
     );
 
-    if (role === 'user' && chat.title === DEFAULT_CHAT_TITLE) {
+    if (role === 'user' && chat?.title === DEFAULT_CHAT_TITLE) {
       await txn.runAsync(
         'UPDATE ai_chats SET title = ? WHERE id = ?',
         deriveChatTitle(content),
@@ -256,9 +273,9 @@ export async function getChatHistoryStats(): Promise<ChatHistoryStats> {
     bytes: number;
   }>(
     `SELECT
-       (SELECT COUNT(*) FROM ai_chats) AS chat_count,
+       (SELECT COUNT(*) FROM ai_chats c WHERE ${VISIBLE_CHAT}) AS chat_count,
        (SELECT COUNT(*) FROM ai_messages) AS message_count,
-       (SELECT COALESCE(SUM(bytes), 0) FROM ai_chats) AS bytes`
+       (SELECT COALESCE(SUM(c.bytes), 0) FROM ai_chats c WHERE ${VISIBLE_CHAT}) AS bytes`
   );
 
   return {
@@ -274,8 +291,8 @@ async function getHistoryTotals(): Promise<HistoryTotals> {
   const db = await getDatabase();
   const row = await db.getFirstAsync<{ chat_count: number; bytes: number }>(
     `SELECT
-       (SELECT COUNT(*) FROM ai_chats) AS chat_count,
-       (SELECT COALESCE(SUM(bytes), 0) FROM ai_chats) AS bytes`
+       (SELECT COUNT(*) FROM ai_chats c WHERE ${VISIBLE_CHAT}) AS chat_count,
+       (SELECT COALESCE(SUM(c.bytes), 0) FROM ai_chats c WHERE ${VISIBLE_CHAT}) AS bytes`
   );
   return {
     chatCount: row?.chat_count ?? 0,
@@ -295,7 +312,10 @@ async function trimChatHistory(activeChatId: string): Promise<void> {
 
   const db = await getDatabase();
   const candidates = await db.getAllAsync<ChatSizeRow>(
-    'SELECT id, bytes FROM ai_chats ORDER BY updated_at ASC, created_at ASC'
+    `SELECT c.id, c.bytes
+     FROM ai_chats c
+     WHERE ${VISIBLE_CHAT}
+     ORDER BY c.updated_at ASC, c.created_at ASC`
   );
   const toRemove = selectChatsToTrim(
     candidates,

@@ -29,7 +29,7 @@ import {
 } from '@/features/ai/chatHistory';
 import {
   appendChatMessage,
-  createChat,
+  createDraftChat,
   deleteChat,
   getChat,
   getChatHistoryStats,
@@ -80,6 +80,7 @@ export default function AssistantScreen() {
   const listRef = useRef<FlatList<ChatMessage>>(null);
   const controllerRef = useRef<AbortController | null>(null);
   const activeChatIdRef = useRef<string | null>(null);
+  const activeChatIsDraftRef = useRef(false);
   const scrollToEndRef = useRef(true);
   const creatingChatRef = useRef(false);
 
@@ -117,9 +118,10 @@ export default function AssistantScreen() {
     }
   }, [keyboardHeight]);
 
-  const loadChat = useCallback(async (id: string) => {
+  const loadChat = useCallback(async (id: string, isDraft = false) => {
     const page = await listChatMessages(id, CHAT_HISTORY_PAGE_SIZE);
     activeChatIdRef.current = id;
+    activeChatIsDraftRef.current = isDraft;
     setChatId(id);
     setMessages(page.messages);
     setHasOlder(page.hasMore);
@@ -143,10 +145,13 @@ export default function AssistantScreen() {
     // Keep the open chat across tab changes, but recover if the database was
     // wiped from Settings while this screen was in the background.
     const currentId = activeChatIdRef.current;
-    if (currentId && (await getChat(currentId))) return;
+    if (currentId) {
+      if (activeChatIsDraftRef.current) return;
+      if (await getChat(currentId)) return;
+    }
 
     const latest = await getOrCreateLatestChat();
-    await loadChat(latest.id);
+    await loadChat(latest.chat.id, latest.isDraft);
   }, [loadChat, preferences.aiMethod, repository]);
 
   useFocusEffect(
@@ -168,7 +173,7 @@ export default function AssistantScreen() {
       })
     : null;
 
-  async function openChat(id: string) {
+  async function openChat(id: string, isDraft = false) {
     Keyboard.dismiss();
     controllerRef.current?.abort();
     controllerRef.current = null;
@@ -177,7 +182,7 @@ export default function AssistantScreen() {
     setShowHistory(false);
 
     try {
-      await loadChat(id);
+      await loadChat(id, isDraft);
     } catch {
       setError('Could not open that conversation.');
     }
@@ -200,8 +205,8 @@ export default function AssistantScreen() {
     setError(null);
 
     try {
-      const chat = await createChat();
-      await loadChat(chat.id);
+      const chat = createDraftChat();
+      await loadChat(chat.id, true);
       setShowHistory(false);
     } catch {
       setError('Could not start a new chat.');
@@ -244,8 +249,7 @@ export default function AssistantScreen() {
         if (nextChats.length > 0) {
           await openChat(nextChats[0].id);
         } else {
-          const replacement = await createChat();
-          await openChat(replacement.id);
+          await openChat(createDraftChat().id, true);
         }
       }
     } catch {
@@ -337,6 +341,7 @@ export default function AssistantScreen() {
 
     const conversation = [...messages, userMessage];
     if (activeChatIdRef.current === targetChatId) {
+      activeChatIsDraftRef.current = false;
       setMessages(conversation);
     } else {
       // The user switched chats while the message was being written.
