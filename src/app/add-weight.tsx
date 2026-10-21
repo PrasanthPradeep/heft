@@ -57,7 +57,9 @@ export default function AddWeightScreen() {
         'Health Connect was unreachable, so this reading is waiting to sync.'
       );
     }
-    router.replace('/');
+    // Replace would stack a second dashboard on top of the existing one, which
+    // shows a back arrow on the root screen. Dismiss back to the existing one.
+    router.dismissTo('/');
   }
 
   async function handleDelete() {

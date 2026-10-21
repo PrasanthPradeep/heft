@@ -456,7 +456,7 @@ export default function AssistantScreen() {
             <Text
               style={styles.toolbarLink}
               onPress={() => setShowPreview((value) => !value)}>
-              {showPreview ? 'Hide data' : 'Preview'}
+              {showPreview ? 'Hide preview' : 'Shared data'}
             </Text>
             <Text style={styles.toolbarLink} onPress={() => void openHistory()}>
               History
