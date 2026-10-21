@@ -1,36 +1,31 @@
 name: Publish over-the-air update
 
 # `main` is where work lands. `stable` is what phones run, so merging a pull
-# request into stable *is* the release action. Direct pushes to stable do not
-# publish automatically; the version-release workflow still dispatches this
-# workflow explicitly after it updates stable.
+# request from main into stable *is* the release action.
 #
-# The channel below is `preview` because that is what the installed APK
-# subscribes to: a channel is baked into a build, so renaming it would mean
-# rebuilding and reinstalling the APK.
+# Pull requests get the same checks without shipping anything, which means you
+# can see a green tick before merging. The channel below is `preview` because
+# that is what the installed APK subscribes to: a channel is baked into a build,
+# so renaming it would mean rebuilding and reinstalling the APK.
 
 on:
+  push:
+    branches: [stable]
   pull_request:
-    types: [closed]
     branches: [stable]
   workflow_dispatch:
 
 concurrency:
-  # Serialise publishes on the same target branch so two quick merges cannot race.
-  group: publish-update-${{ github.event.pull_request.base.ref || github.ref_name }}
+  # Serialise publishes per branch so two quick merges cannot race.
+  group: publish-update-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
   validate-and-publish:
-    # A closed pull request can be merged or abandoned. Only ship merged code.
-    if: github.event_name == 'workflow_dispatch' || github.event.pull_request.merged == true
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
-          # For a merged PR, check out the commit that landed on stable rather
-          # than the transient pull-request merge ref.
-          ref: ${{ github.event.pull_request.merge_commit_sha || github.ref }}
           # eas update records the commit it publishes.
           fetch-depth: 0
 
@@ -54,6 +49,7 @@ jobs:
       # A missing secret must stop the release loudly rather than quietly ship
       # nothing. Set it once with: gh secret set EXPO_TOKEN
       - name: Check that the publish token is configured
+        if: github.event_name != 'pull_request'
         env:
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
         run: |
@@ -63,9 +59,10 @@ jobs:
           fi
 
       - name: Publish update
+        if: github.event_name != 'pull_request'
         env:
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
-          MESSAGE: ${{ github.event.pull_request.title || 'Publish from stable' }}
+          MESSAGE: ${{ github.event.head_commit.message }}
         run: |
           npx eas-cli@latest update \
             --channel preview \
